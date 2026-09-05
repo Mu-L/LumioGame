@@ -49,7 +49,6 @@ public static class ChatSetMessageSystem
         }
 
         _ = roomId;
-        _ = connectionGeneration;
         if (input is null)
         {
             throw new ArgumentNullException(nameof(input));
@@ -77,7 +76,7 @@ public static class ChatSetMessageSystem
             return ChatOperationResult.Rejected(ChatErrorCodes.ChatTextTooLong);
         }
 
-        manager.Enqueue(new InputCommandMessage(sender, input.Commands, connectionId));
+        manager.Enqueue(new InputCommandMessage(input.Sequence, sender, input.Commands, connectionId, connectionGeneration));
         return ChatOperationResult.Admitted();
     }
 
