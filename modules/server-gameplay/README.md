@@ -3,7 +3,7 @@
 > 权威 Gameplay 消费面：信封解码、Bot 名规则、以及 Runtime ChatComponent 的 Admit / SetMessage 入口。
 
 **优先级**：P0
-**架构基线**：`LGE-V1.4-2026-08-27`
+**公共契约来源**：`LumioGameEngine` 的 ABI 与 wire 契约；本模块不复制架构版本。
 **契约消费**：`lumio.gameplay-envelope.v1`（架构源 `engine/wire/gameplay-command-envelope-v1.json`）
 
 ## 负责什么
