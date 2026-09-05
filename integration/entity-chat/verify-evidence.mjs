@@ -226,13 +226,13 @@ export function censusFromServerLogs(serverEvents) {
     if (kind === 'entity_admitted' || kind === 'admit') {
       const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
       const type = entityTypeOf(ev)
-      if (id != null && type != null) byId.set(id, type)
+      if (id != null && (type === 'player' || type === 'bot')) byId.set(id, type)
     }
     if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
     for (const create of ev.creates) {
       const id = parseSenderNetEntityId(create) ?? parseSenderNetEntityId(create?.netEntityId)
       const type = entityTypeOf(create)
-      if (id != null && type != null) byId.set(id, type)
+      if (id != null && (type === 'player' || type === 'bot')) byId.set(id, type)
     }
   }
   let botCount = 0
@@ -1139,5 +1139,25 @@ test('Runtime RPC evidence cannot replace missing client window events', () => {
     const report = verifyEvidenceDir(root)
     assert.equal(report.ok, false)
     assert.ok(report.round1.failures.some((failure) => failure.check === 's6:window'), JSON.stringify(report.failures))
+  })
+})
+
+test('census excludes the Runtime WorldEntity from player and total counts', () => {
+  const records = [{ ev: {
+    kind: 'drain',
+    frames: [{
+      messageType: 'WorldChange',
+      creates: [
+        { entityType: 'world', netEntityId: senderHex(1n, 1n), fields: [] },
+        { entityType: 'player', netEntityId: senderHex(1n, 2n), fields: [] },
+      ],
+    }],
+    queries: [],
+  } }]
+  assert.deepEqual(censusFromServerLogs(records), {
+    botCount: 0,
+    playerCount: 1,
+    total: 1,
+    netEntityIds: [senderHex(1n, 2n)],
   })
 })
