@@ -1,5 +1,4 @@
 using System;
-using System.Buffers.Binary;
 using System.Text;
 using System.Threading;
 using Lumio.GameRuntime.Ecs;
@@ -61,7 +60,11 @@ public static class ChatSetMessageSystem
             return ChatOperationResult.Rejected(ChatErrorCodes.ChatTextTooLong);
         }
 
-        manager.Enqueue(new InputCommandMessage(ChatMapping.InputMappingId, sender, EncodeUtf8Prefixed(input.Text), connectionId));
+        manager.Enqueue(new InputCommandMessage(
+            ChatMapping.InputMappingId,
+            sender,
+            InputCommandEnvelope.EncodeChatTextPayload(input.Text),
+            connectionId));
         return ChatOperationResult.Admitted();
     }
 
@@ -126,14 +129,5 @@ public static class ChatSetMessageSystem
 
         component = manager.World.Get<ChatComponent>(netEntityId);
         return true;
-    }
-
-    private static byte[] EncodeUtf8Prefixed(string text)
-    {
-        byte[] utf8 = Encoding.UTF8.GetBytes(text ?? string.Empty);
-        byte[] payload = new byte[4 + utf8.Length];
-        BinaryPrimitives.WriteUInt32LittleEndian(payload, (uint)utf8.Length);
-        Buffer.BlockCopy(utf8, 0, payload, 4, utf8.Length);
-        return payload;
     }
 }

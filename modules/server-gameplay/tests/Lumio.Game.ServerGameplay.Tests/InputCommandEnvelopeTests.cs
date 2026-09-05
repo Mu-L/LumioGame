@@ -32,6 +32,15 @@ public sealed class InputCommandEnvelopeTests
             nameof(ChatSetMessageSystem.AdmitEnvelope),
             BindingFlags.Static | BindingFlags.Public);
         Assert.NotNull(envelope);
+        Assert.Null(typeof(ChatSetMessageSystem).GetMethod(
+            "EncodeUtf8Prefixed",
+            BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic));
+    }
+
+    [Fact]
+    public void ChatInputPayloadUsesTheSharedC1CodecBoundary()
+    {
+        Assert.Equal("020000006767", Convert.ToHexString(InputCommandEnvelope.EncodeChatTextPayload("gg")).ToLowerInvariant());
     }
 
     [Fact]

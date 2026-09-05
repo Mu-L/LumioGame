@@ -40,7 +40,7 @@ public sealed class InputCommandEnvelope
     /// <summary>Encodes a single chat.input CommandBlock using LumioBinV1 fieldOrder [text].</summary>
     public static InputCommandEnvelope FromChatText(string text)
     {
-        byte[] payload = EncodeUtf8Prefixed(text ?? string.Empty);
+        byte[] payload = EncodeChatTextPayload(text);
         return new InputCommandEnvelope(
             MessageTypeName,
             new[]
@@ -48,6 +48,9 @@ public sealed class InputCommandEnvelope
                 new CommandBlock(ChatMapping.InputMappingId, ToHex(payload), Sha256Hex(payload))
             });
     }
+
+    /// <summary>Encodes the Runtime C-1 <c>chat.input</c> payload.</summary>
+    public static byte[] EncodeChatTextPayload(string? text) => EncodeUtf8Prefixed(text ?? string.Empty);
 
     /// <summary>
     /// Validates messageType, mapping kind, payload digest, and LumioBinV1 text.

@@ -65,6 +65,6 @@ public static class RuntimeDrainConsumer
             throw new ArgumentNullException(nameof(manager));
         }
 
-        return Consume(manager.Drain());
+        return Consume(manager.DrainOutbox());
     }
 }
