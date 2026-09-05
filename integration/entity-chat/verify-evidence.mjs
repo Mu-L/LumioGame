@@ -233,7 +233,7 @@ export function censusFromServerLogs(serverEvents) {
 }
 
 function decodeHexText(value) {
-  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value)) return null
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/.test(value)) return null
   const bytes = Buffer.from(value, 'hex')
   try { return new TextDecoder().decode(bytes) } catch { return null }
 }
@@ -243,36 +243,26 @@ function chatEventFromRpc(rpc) {
   const sender = parseSenderNetEntityId(rpc.sender)
   if (sender == null || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
   const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
-  const text = decodeHexText(encoded) ?? (typeof rpc.text === 'string' ? rpc.text : '')
+  const text = decodeHexText(encoded)
+  if (text == null) return null
   return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
-}
-
-function directChatEventsFromClient(clientEvents) {
-  const events = []
-  for (const record of clientEvents ?? []) {
-    const ev = record?.ev
-    const kind = kindOf(ev)
-    if (kind !== 'chat.event' && kind !== 'event') continue
-    const sender = parseSenderNetEntityId(ev)
-    if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
-    events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
-  }
-  return events
 }
 
 function runtimeRpcSequence(events) {
   const chatEvents = []
   let present = false
+  let invalid = 0
   for (const ev of runtimeDrainFrames(events)) {
     if (ev.messageType === 'WorldChange' && Array.isArray(ev.rpcs)) {
       present = true
       for (const rpc of ev.rpcs) {
         const parsed = chatEventFromRpc(rpc)
         if (parsed) chatEvents.push(parsed)
+        else if (isObject(rpc) && rpc.componentId === 'ChatComponent' && rpc.method === 'OnChatMessage') invalid++
       }
     }
   }
-  return { present, events: chatEvents }
+  return { present, events: chatEvents, invalid }
 }
 
 function chatEventsFromRuntimeDrains(serverEvents, clientEvents) {
@@ -289,8 +279,6 @@ function windowLinesFromClient(clientEvents) {
     lines.push(ev)
   }
   if (lines.length > 0) return lines
-  const direct = directChatEventsFromClient(clientEvents)
-  if (direct.length > 0) return direct
   return runtimeRpcSequence(clientEvents).events
 }
 
@@ -391,12 +379,14 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's1:wrong-password', message: 'account log must observe wrong_password' })
   }
 
-  const directReceived = directChatEventsFromClient(clientEvents)
   const runtimeRpc = chatEventsFromRuntimeDrains(serverEvents, clientEvents)
   const runtimeObserved = runtimeRpc.events
-  const observed = runtimeRpc.present ? runtimeObserved : directReceived
-  if (runtimeObserved.length === 0 && directReceived.length === 0) {
-    failures.push({ check: 's3:chat-event', message: 'client logs must contain received chat.event' })
+  const observed = runtimeObserved
+  if (!runtimeRpc.present || runtimeObserved.length === 0) {
+    failures.push({ check: 's3:runtime-rpc', message: 'Runtime drain must contain WorldChange.rpcs OnChatMessage evidence' })
+  }
+  if (runtimeRpc.invalid > 0) {
+    failures.push({ check: 's3:runtime-rpc-format', message: 'Runtime OnChatMessage args[0] must be lowercase hex' })
   }
 
   for (let i = 1; i < runtimeObserved.length; i++) {
@@ -409,13 +399,14 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     }
   }
 
-  if (runtimeObserved.length > 0 && directReceived.length > 0) {
+  const windowLines = windowLinesFromClient(clientEvents)
+  if (runtimeObserved.length > 0 && windowLines.length > 0) {
     const runtimeOrder = runtimeObserved.map((ev) => eventOrderKey(ev))
-    const receivedOrder = directReceived.map((ev) => eventOrderKey(ev))
-    if (JSON.stringify(runtimeOrder) !== JSON.stringify(receivedOrder)) {
+    const windowOrder = windowLines.map((ev) => eventOrderKey(ev))
+    if (JSON.stringify(runtimeOrder) !== JSON.stringify(windowOrder)) {
       failures.push({
         check: 's6:rpc-event-order',
-        message: 'Runtime drain WorldChange.rpcs must exactly match received event identity and order',
+        message: 'Runtime drain WorldChange.rpcs must exactly match client window event identity and order',
       })
     }
   }
@@ -447,7 +438,6 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's6:mappingId', message: `mappingId=${tick.mappingId}, expected chat.input` })
   }
 
-  const windowLines = windowLinesFromClient(clientEvents)
   if (windowLines.length !== 101) {
     failures.push({ check: 's6:window', message: `client window lines ${windowLines.length}, expected 101` })
   } else {
@@ -892,7 +882,7 @@ function appendClientRuntimeRpcDrain(root, round, mutate = (rpcs) => rpcs) {
   const clientPath = join(root, round, 'client', 'client.ndjson')
   const received = parseNdjson(readFileSync(clientPath, 'utf8'))
     .map((record) => record.ev)
-    .filter((ev) => kindOf(ev) === 'chat.event')
+    .filter((ev) => kindOf(ev) === 'chat.window' && ev.phase === 'live')
   const rpcs = received.map((ev) => ({
     componentId: 'ChatComponent',
     method: 'OnChatMessage',
@@ -948,6 +938,60 @@ test('an observed Runtime WorldChange.rpcs sequence cannot fall back to direct c
     const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
     assert.equal(report.ok, false)
     assert.ok(report.failures.some((failure) => failure.check === 's11:synthesized'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence rejects missing args even when rpc.text is present', () => {
+  withOracleTempDir('rpc-missing-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].text = 'hello-1'
+      delete changed[0].args
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence rejects non-hex args even when rpc.text is present', () => {
+  withOracleTempDir('rpc-non-hex-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args = ['not-hex']
+      changed[0].text = 'hello-1'
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires lowercase hex args', () => {
+  withOracleTempDir('rpc-uppercase-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = changed[0].args[0].toUpperCase()
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('client chat.event records cannot replace Runtime WorldChange.rpcs evidence', () => {
+  withOracleTempDir('rpc-required', (root) => {
+    writeOracleMinFixture(root)
+    clearServerRuntimeFrames(root, 'round-1')
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc'), JSON.stringify(report.failures))
   })
 })
 
