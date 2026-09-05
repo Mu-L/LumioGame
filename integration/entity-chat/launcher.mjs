@@ -221,7 +221,7 @@ function mergeObserved(evidence, observation, pid) {
   evidence.playwright = {
     ...(evidence.playwright ?? {}),
     ...(observation.playwright ?? {}),
-    receivedFromNetwork: windowLines.length > 0 || observation.playwright?.receivedChatEvent === true,
+    receivedFromNetwork: observation.playwright?.receivedFromNetwork === true,
     receivedChatEvent: windowLines.length > 0 || observation.playwright?.receivedChatEvent === true,
     windowLines,
     receivedEvents: windowLines,
@@ -312,9 +312,8 @@ async function observeRound({ pid, roundDir, abort }) {
     observation.windowLines = observation.playwright.windowLines ?? []
     observation.oldConnectionSuperseded = oldBot100?.superseded === true
     observation.connectionSuperseded = observation.oldConnectionSuperseded
-    const nodeEvents = observer?.chatEvents ?? []
     const pageEvents = observation.windowLines
-    observation.receivedEvents = pageEvents.length >= nodeEvents.length ? pageEvents : nodeEvents
+    observation.receivedEvents = pageEvents
     observation.windowBeforeSnapshot = observation.windowLines.length > 0 ? observation.windowLines.length : null
   } catch (err) {
     observation.error = String(err && err.message ? err.message : err).split('\n')[0]
@@ -366,6 +365,25 @@ function blockedFromReplay(exited, roundDir) {
   return fromFile || (logMatch ? logMatch[1].trim() : '') || (exited.code ? `replay exited ${exited.code}` : 'evidence.json missing')
 }
 
+function writePlaywrightNetworkLog(roundDir, playwright) {
+  const frames = Array.isArray(playwright?.networkFrames) ? playwright.networkFrames : []
+  if (frames.length === 0) return
+  const clientDir = join(roundDir, 'client')
+  mkdirSync(clientDir, { recursive: true })
+  const records = frames.map((frame) => JSON.stringify({
+    kind: 'playwright.network',
+    source: 'playwright',
+    browser: playwright.browser ?? 'chromium',
+    channel: playwright.channel ?? null,
+    ran: playwright.ran === true,
+    receivedFromNetwork: playwright.receivedFromNetwork === true,
+    transport: 'websocket',
+    direction: 'received',
+    ...frame,
+  }))
+  writeFileSync(join(clientDir, 'playwright-network.ndjson'), `${records.join('\n')}\n`)
+}
+
 async function runOneRound({ bin, roundDir }) {
   mkdirSync(dirname(roundDir), { recursive: true })
   const logPath = join(dirname(roundDir), `${relative(dirname(roundDir), roundDir)}.replay.log`.replaceAll('\\', '.'))
@@ -383,6 +401,7 @@ async function runOneRound({ bin, roundDir }) {
   evidence = mergeObserved(evidence, obs, replay.proc.pid)
   evidence.oracleSha256 = oracleSha256()
   writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n')
+  writePlaywrightNetworkLog(roundDir, obs.playwright)
   if (obs.error) {
     writeFileSync(join(roundDir, 'observe-error.txt'), `${obs.error}\n`)
   }

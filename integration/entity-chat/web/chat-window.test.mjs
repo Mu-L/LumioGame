@@ -2,7 +2,6 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
   appendAcceptedEvent,
-  applyFullSnapshot,
   createChatWindow,
   extractChatEventsFromFrame,
   formatLine,
@@ -48,17 +47,24 @@ test('extractChatEventsFromFrame reads ordered ChatComponent.OnChatMessage RPCs 
   ])
 })
 
-test('applyFullSnapshot clears the client-only window', () => {
-  const window = createChatWindow()
-  appendAcceptedEvent(window, {
-    messageId: 1,
-    roomSequence: 1,
-    senderNetEntityId: GG_SENDER,
-    text: 'gg',
-    appliedTick: 7,
-  })
-  applyFullSnapshot(window)
-  assert.equal(window.lines.length, 0)
+test('extractChatEventsFromFrame rejects malformed UTF-8 instead of replacing bytes', () => {
+  const sender = '000000000000000100000000000000af'
+  const rpc = { ...canonicalChatRpc({ messageId: 1, roomSequence: 1, sender, text: 'placeholder' }), args: ['c3'] }
+  const events = extractChatEventsFromFrame(canonicalWorldChange([rpc]))
+  assert.deepEqual(events, [])
+})
+
+test('extractChatEventsFromFrame enforces Runtime target, scope, and lowercase ID fields', () => {
+  const sender = '000000000000000100000000000000af'
+  const base = canonicalChatRpc({ messageId: 1, roomSequence: 1, sender, text: 'hello' })
+  for (const changed of [
+    { ...base, target: undefined },
+    { ...base, scope: 'entity' },
+    { ...base, sender: sender.toUpperCase() },
+    { ...base, args: [''] },
+  ]) {
+    assert.deepEqual(extractChatEventsFromFrame(canonicalWorldChange([changed])), [])
+  }
 })
 
 test('formatLine uses sender and text', () => {

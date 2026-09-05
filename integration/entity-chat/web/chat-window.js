@@ -6,10 +6,6 @@ export function createChatWindow() {
   return { lines: [] }
 }
 
-export function applyFullSnapshot(window) {
-  window.lines = []
-}
-
 export function appendAcceptedEvent(window, event) {
   if (!isEvent(event)) return false
   const last = window.lines.length === 0 ? null : window.lines[window.lines.length - 1]
@@ -51,18 +47,24 @@ export function extractChatEventsFromFrame(frame) {
 function decodeRpcText(args) {
   if (!Array.isArray(args) || args.length === 0 || typeof args[0] !== 'string') return null
   const hex = args[0]
-  if (hex.length % 2 !== 0 || !/^[0-9a-fA-F]*$/.test(hex)) return null
+  if (hex.length === 0 || hex.length % 2 !== 0 || !/^[0-9a-fA-F]+$/.test(hex)) return null
   const bytes = new Uint8Array(hex.length / 2)
   for (let i = 0; i < bytes.length; i++) {
     bytes[i] = Number.parseInt(hex.slice(i * 2, i * 2 + 2), 16)
   }
-  return new TextDecoder().decode(bytes)
+  try {
+    return new TextDecoder('utf-8', { fatal: true }).decode(bytes)
+  } catch {
+    return null
+  }
 }
 
 function chatEventFromRpc(rpc) {
   if (rpc == null || typeof rpc !== 'object') return null
   if (rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
-  if (typeof rpc.sender !== 'string' || !/^[0-9a-f]{32}$/i.test(rpc.sender)) return null
+  if (typeof rpc.target !== 'string' || !/^[0-9a-f]{32}$/.test(rpc.target)) return null
+  if (rpc.scope !== 'room') return null
+  if (typeof rpc.sender !== 'string' || !/^[0-9a-f]{32}$/.test(rpc.sender)) return null
   if (!Number.isSafeInteger(rpc.messageId) || rpc.messageId < 0) return null
   if (!Number.isSafeInteger(rpc.roomSequence) || rpc.roomSequence < 0) return null
   if (!Number.isSafeInteger(rpc.appliedTick) || rpc.appliedTick < 0) return null

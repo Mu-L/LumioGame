@@ -8,6 +8,7 @@ import assert from 'node:assert/strict'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const LAUNCHER = join(SCRIPT_DIR, 'launcher.mjs')
+const SCENARIOS = join(SCRIPT_DIR, 'scenarios.mjs')
 
 test('launcher CLI loads the formal verifier before missing-replay handling', () => {
   const root = mkdtempSync(join(tmpdir(), 'lumio-entity-chat-launcher-'))
@@ -31,4 +32,10 @@ test('launcher CLI loads the formal verifier before missing-replay handling', ()
   } finally {
     rmSync(root, { recursive: true, force: true })
   }
+})
+
+test('production scenarios consume Runtime WorldChange without legacy mvp-host snapshots', () => {
+  const source = readFileSync(SCENARIOS, 'utf8')
+  assert.doesNotMatch(source, /mvp-host/i)
+  assert.doesNotMatch(source, /FullSnapshot/)
 })

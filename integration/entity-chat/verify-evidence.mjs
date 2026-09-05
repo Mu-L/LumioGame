@@ -295,6 +295,39 @@ function windowLinesFromClient(clientEvents) {
   return lines
 }
 
+function playwrightNetworkRpcSequence(clientEvents) {
+  const events = []
+  let present = false
+  let invalid = 0
+  for (const record of clientEvents ?? []) {
+    const ev = record?.ev
+    if (kindOf(ev) !== 'playwright.network'
+      || ev.source !== 'playwright'
+      || ev.transport !== 'websocket'
+      || ev.direction !== 'received'
+      || ev.messageType !== 'WorldChange') continue
+    present = true
+    if (ev.ran !== true || ev.receivedFromNetwork !== true) {
+      invalid++
+      continue
+    }
+    if (!['chromium', 'chrome', 'msedge'].includes(String(ev.browser ?? '').toLowerCase())) {
+      invalid++
+      continue
+    }
+    if (!Array.isArray(ev.rpcs)) {
+      invalid++
+      continue
+    }
+    for (const rpc of ev.rpcs) {
+      const parsed = chatEventFromRpc(rpc)
+      if (parsed) events.push(parsed)
+      else if (isObject(rpc) && rpc.componentId === 'ChatComponent' && rpc.method === 'OnChatMessage') invalid++
+    }
+  }
+  return { present, events, invalid }
+}
+
 function hasKind(events, kind) {
   return events.some(({ ev }) => kindOf(ev) === kind)
 }
@@ -414,6 +447,20 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   }
 
   const windowLines = windowLinesFromClient(clientEvents)
+  const browserNetwork = playwrightNetworkRpcSequence(clientEvents)
+  if (!browserNetwork.present || browserNetwork.events.length === 0) {
+    failures.push({ check: 's6:playwright-network', message: 'client logs must contain Playwright websocket WorldChange evidence' })
+  }
+  if (browserNetwork.invalid > 0) {
+    failures.push({ check: 's6:playwright-network-format', message: 'Playwright websocket evidence contains invalid Runtime OnChatMessage records' })
+  }
+  if (browserNetwork.events.length > 0) {
+    const networkOrder = browserNetwork.events.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    const runtimeOrder = runtimeObserved.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    if (JSON.stringify(networkOrder) !== JSON.stringify(runtimeOrder)) {
+      failures.push({ check: 's6:playwright-network-order', message: 'Playwright websocket WorldChange records must match Runtime records exactly' })
+    }
+  }
   if (runtimeObserved.length > 0) {
     const runtimeOrder = runtimeObserved.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
     const windowOrder = windowLines.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
@@ -574,7 +621,7 @@ function ndjson(rows) {
   return rows.map((row) => JSON.stringify(row)).join('\n') + '\n'
 }
 
-export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } = {}) {
+export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true, browserNetwork = true } = {}) {
   mkdirSync(join(dir, 'round-1', 'server'), { recursive: true })
   mkdirSync(join(dir, 'round-1', 'client'), { recursive: true })
   mkdirSync(join(dir, 'round-2', 'server'), { recursive: true })
@@ -674,6 +721,19 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
       payloadSha256: '5dbd584f1718b8bcd0dab4abeea83169f4a990defab81a8316ed845798d92dab',
     },
   ]
+  if (browserNetwork) {
+    extraClient.push({
+      kind: 'playwright.network',
+      source: 'playwright',
+      browser: 'chromium',
+      ran: true,
+      receivedFromNetwork: true,
+      transport: 'websocket',
+      direction: 'received',
+      messageType: 'WorldChange',
+      rpcs,
+    })
+  }
   const serverText = ndjson([...extraServer, ...admits])
   const clientText = ndjson([...extraClient, ...events, ...windows])
   const toWrite = crlf ? (s) => s.replace(/\n/g, '\r\n') : (s) => s
@@ -792,6 +852,43 @@ test('harness evidence.json / timer-trace.json 不是输入', () => {
     const report = verifyEvidenceDir(dir)
     assert.equal(report.ok, false)
     assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+  })
+})
+
+test('replay-only logs fail without real Playwright websocket evidence', () => {
+  withOracleTempDir('playwright-required', (root) => {
+    writeOracleMinFixture(root, { browserNetwork: false })
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, false)
+    assert.ok(report.round1.failures.some((failure) => failure.check === 's6:playwright-network'), JSON.stringify(report.failures))
+  })
+})
+
+test('Playwright websocket WorldChange evidence must match Runtime RPC identity and order', () => {
+  withOracleTempDir('playwright-network-order', (root) => {
+    writeOracleMinFixture(root)
+    const clientPath = join(root, 'round-1', 'client', 'client.ndjson')
+    const rows = parseNdjson(readFileSync(clientPath, 'utf8')).map((record) => record.ev)
+    const network = rows.find((ev) => kindOf(ev) === 'playwright.network')
+    network.rpcs = [...network.rpcs].reverse()
+    writeFileSync(clientPath, ndjson(rows))
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), clientPath)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:playwright-network-order'), JSON.stringify(report.failures))
+  })
+})
+
+test('Playwright evidence must explicitly attest a real network observation', () => {
+  withOracleTempDir('playwright-network-attestation', (root) => {
+    writeOracleMinFixture(root)
+    const clientPath = join(root, 'round-1', 'client', 'client.ndjson')
+    const rows = parseNdjson(readFileSync(clientPath, 'utf8')).map((record) => record.ev)
+    const network = rows.find((ev) => kindOf(ev) === 'playwright.network')
+    network.receivedFromNetwork = false
+    writeFileSync(clientPath, ndjson(rows))
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), clientPath)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:playwright-network-format'), JSON.stringify(report.failures))
   })
 })
 
