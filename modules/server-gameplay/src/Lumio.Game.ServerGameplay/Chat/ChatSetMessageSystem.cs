@@ -12,36 +12,36 @@ namespace Lumio.Game.ServerGameplay;
 /// </summary>
 public static class ChatSetMessageSystem
 {
-    /// <summary>
-    /// Decodes a frozen InputCommand envelope, then admits <see cref="ChatInput"/> into the World Manager inbox.
-    /// Hash mismatch is reported before any component write.
-    /// </summary>
+    /// <summary>Decodes and validates a Runtime C-1 InputCommand, then admits its typed message.</summary>
     public static ChatOperationResult AdmitEnvelope(
         WorldManager manager,
         string roomId,
         NetEntityId sender,
         string connectionId,
         ulong connectionGeneration,
-        InputCommandEnvelope envelope)
+        ReadOnlySpan<byte> envelope)
     {
-        if (!InputCommandEnvelope.TryDecodeChatText(envelope, out string text, out string errorCode))
+        InputCommandMessage input;
+        try
         {
-            return ChatOperationResult.Rejected(errorCode);
+            input = WireCodec.DecodeInput(envelope, sender);
+        }
+        catch (FormatException exception)
+        {
+            return ChatOperationResult.Rejected(MapRuntimeCodecError(exception));
         }
 
-        return Admit(manager, roomId, sender, connectionId, connectionGeneration, new ChatInput(text));
+        return Admit(manager, roomId, sender, connectionId, connectionGeneration, input);
     }
 
-    /// <summary>
-    /// Admits <paramref name="input"/> into the World Manager inbox. Network-thread safe; does not write ChatComponent.
-    /// </summary>
+    /// <summary>Admits a Runtime-validated typed chat command into the World Manager inbox.</summary>
     public static ChatOperationResult Admit(
         WorldManager manager,
         string roomId,
         NetEntityId sender,
         string connectionId,
         ulong connectionGeneration,
-        ChatInput input)
+        InputCommandMessage input)
     {
         if (manager is null)
         {
@@ -50,21 +50,34 @@ public static class ChatSetMessageSystem
 
         _ = roomId;
         _ = connectionGeneration;
-        if (input.Text is null)
+        if (input is null)
         {
-            throw new ArgumentException("ChatInput.Text is required.", nameof(input));
+            throw new ArgumentNullException(nameof(input));
         }
 
-        if (Encoding.UTF8.GetByteCount(input.Text) > ChatMapping.MaxTextUtf8Bytes)
+        if (input.Sender != sender)
+        {
+            return ChatOperationResult.Rejected(ChatErrorCodes.BadEnvelope);
+        }
+
+        if (input.Commands.Count != 1 || input.MappingId != ChatMapping.InputMappingId)
+        {
+            return ChatOperationResult.Rejected(input.Commands.Count == 1
+                ? ChatErrorCodes.UnknownCommandType
+                : ChatErrorCodes.BadEnvelope);
+        }
+
+        if (!WireCodec.TryReadUtf8Payload(input.Payload.Span, out string text))
+        {
+            return ChatOperationResult.Rejected(ChatErrorCodes.UndecodablePayload);
+        }
+
+        if (Encoding.UTF8.GetByteCount(text) > ChatMapping.MaxTextUtf8Bytes)
         {
             return ChatOperationResult.Rejected(ChatErrorCodes.ChatTextTooLong);
         }
 
-        manager.Enqueue(new InputCommandMessage(
-            ChatMapping.InputMappingId,
-            sender,
-            InputCommandEnvelope.EncodeChatTextPayload(input.Text),
-            connectionId));
+        manager.Enqueue(new InputCommandMessage(sender, input.Commands, connectionId));
         return ChatOperationResult.Admitted();
     }
 
@@ -129,5 +142,31 @@ public static class ChatSetMessageSystem
 
         component = manager.World.Get<ChatComponent>(netEntityId);
         return true;
+    }
+
+    private static string MapRuntimeCodecError(FormatException exception)
+    {
+        string detail = exception.Message;
+        if (detail.Contains(ChatErrorCodes.BadPayloadHash, StringComparison.OrdinalIgnoreCase))
+        {
+            return ChatErrorCodes.BadPayloadHash;
+        }
+
+        if (detail.Contains(ChatErrorCodes.UndecodablePayload, StringComparison.OrdinalIgnoreCase))
+        {
+            return ChatErrorCodes.UndecodablePayload;
+        }
+
+        if (detail.Contains(ChatErrorCodes.BlockOrderViolation, StringComparison.OrdinalIgnoreCase))
+        {
+            return ChatErrorCodes.BlockOrderViolation;
+        }
+
+        if (detail.Contains("unknown command", StringComparison.OrdinalIgnoreCase))
+        {
+            return ChatErrorCodes.UnknownCommandType;
+        }
+
+        return ChatErrorCodes.BadEnvelope;
     }
 }

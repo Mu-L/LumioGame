@@ -16,7 +16,7 @@ public sealed class ChatBoundedInputTests
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
 
         string cap = new string('a', 64);
-        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, new ChatInput(cap)).Kind);
+        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, cap, "C1")).Kind);
         manager.Tick();
         _ = manager.DrainOutbox();
         Assert.Equal(cap, Component(manager, sender).LastMessageText);
@@ -24,7 +24,7 @@ public sealed class ChatBoundedInputTests
 
         string over = new string('a', ChatMapping.MaxTextUtf8Bytes + 1);
         Assert.Equal(513, Encoding.UTF8.GetByteCount(over));
-        ChatOperationResult admit = ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, new ChatInput(over));
+        ChatOperationResult admit = ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, over, "C1"));
         Assert.Equal(ChatOperationKind.Rejected, admit.Kind);
         Assert.Equal(ChatErrorCodes.ChatTextTooLong, admit.ErrorCode);
 
@@ -44,8 +44,8 @@ public sealed class ChatBoundedInputTests
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         NetEntityId other = ChatWorldHarness.Net(manager, 1);
 
-        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, new ChatInput("first")).Kind);
-        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", other, "C2", 1UL, new ChatInput("other")).Kind);
+        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, "first", "C1")).Kind);
+        Assert.Equal(ChatOperationKind.Admitted, ChatSetMessageSystem.Admit(manager, "room-01", other, "C2", 1UL, RuntimeChatInputFixture.Create(other, "other", "C2")).Kind);
 
         manager.Tick();
 
