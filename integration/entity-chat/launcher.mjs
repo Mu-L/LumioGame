@@ -4,7 +4,7 @@
  *
  * SUCCESS requires sibling lumio-entity-chat-replay. GameRoomHost and
  * lumio-mvp-host are never a SUCCESS path. Evidence fields come from
- * client-received chat.event and on-disk persist, never send-count synthesis.
+ * client-received ClientRpc and on-disk persist, never send-count synthesis.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
@@ -12,7 +12,7 @@ import { createReadStream, existsSync, mkdirSync, readFileSync, readdirSync, rmS
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { connectRoomWire, runPlaywrightBrowser } from './scenarios.mjs'
-import { compareRuns, oracleSha256, TEST_PASSWORD, verifyEvidenceDir, verifyRun } from './verify-evidence.mjs'
+import { compareRuns, oracleSha256, TEST_PASSWORD, verifyEvidenceDir, verifyRunFromLogs } from './verify-evidence.mjs'
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url))
 const REPO_ROOT = resolve(SCRIPT_DIR, '../..')
@@ -221,7 +221,7 @@ function mergeObserved(evidence, observation, pid) {
   evidence.playwright = {
     ...(evidence.playwright ?? {}),
     ...(observation.playwright ?? {}),
-    receivedFromNetwork: windowLines.length > 0 || observation.playwright?.receivedChatEvent === true,
+    receivedFromNetwork: observation.playwright?.receivedFromNetwork === true,
     receivedChatEvent: windowLines.length > 0 || observation.playwright?.receivedChatEvent === true,
     windowLines,
     receivedEvents: windowLines,
@@ -312,9 +312,8 @@ async function observeRound({ pid, roundDir, abort }) {
     observation.windowLines = observation.playwright.windowLines ?? []
     observation.oldConnectionSuperseded = oldBot100?.superseded === true
     observation.connectionSuperseded = observation.oldConnectionSuperseded
-    const nodeEvents = observer?.chatEvents ?? []
     const pageEvents = observation.windowLines
-    observation.receivedEvents = pageEvents.length >= nodeEvents.length ? pageEvents : nodeEvents
+    observation.receivedEvents = pageEvents
     observation.windowBeforeSnapshot = observation.windowLines.length > 0 ? observation.windowLines.length : null
   } catch (err) {
     observation.error = String(err && err.message ? err.message : err).split('\n')[0]
@@ -366,6 +365,25 @@ function blockedFromReplay(exited, roundDir) {
   return fromFile || (logMatch ? logMatch[1].trim() : '') || (exited.code ? `replay exited ${exited.code}` : 'evidence.json missing')
 }
 
+function writePlaywrightNetworkLog(roundDir, playwright) {
+  const frames = Array.isArray(playwright?.networkFrames) ? playwright.networkFrames : []
+  if (frames.length === 0) return
+  const clientDir = join(roundDir, 'client')
+  mkdirSync(clientDir, { recursive: true })
+  const records = frames.map((frame) => JSON.stringify({
+    kind: 'playwright.network',
+    source: 'playwright',
+    browser: playwright.browser ?? 'chromium',
+    channel: playwright.channel ?? null,
+    ran: playwright.ran === true,
+    receivedFromNetwork: playwright.receivedFromNetwork === true,
+    transport: 'websocket',
+    direction: 'received',
+    ...frame,
+  }))
+  writeFileSync(join(clientDir, 'playwright-network.ndjson'), `${records.join('\n')}\n`)
+}
+
 async function runOneRound({ bin, roundDir }) {
   mkdirSync(dirname(roundDir), { recursive: true })
   const logPath = join(dirname(roundDir), `${relative(dirname(roundDir), roundDir)}.replay.log`.replaceAll('\\', '.'))
@@ -383,14 +401,13 @@ async function runOneRound({ bin, roundDir }) {
   evidence = mergeObserved(evidence, obs, replay.proc.pid)
   evidence.oracleSha256 = oracleSha256()
   writeFileSync(evidencePath, JSON.stringify(evidence, null, 2) + '\n')
+  writePlaywrightNetworkLog(roundDir, obs.playwright)
   if (obs.error) {
     writeFileSync(join(roundDir, 'observe-error.txt'), `${obs.error}\n`)
   }
-  const auditText = safeReadText(join(roundDir, 'host-audit.ndjson'))
-  const admitTraceText = safeReadText(join(roundDir, 'admit-trace.ndjson'))
-  const verify = verifyRun(evidence, auditText, admitTraceText)
+  const verify = verifyRunFromLogs(join(roundDir, 'server'), join(roundDir, 'client'))
   writeFileSync(join(roundDir, 'verify-report.json'), JSON.stringify(verify, null, 2) + '\n')
-  return { evidence, auditText, admitTraceText, verify, observation: obs, pid: replay.proc.pid }
+  return { evidence, verify, observation: obs, pid: replay.proc.pid }
 }
 
 async function runPack(bin, packDir) {
@@ -401,14 +418,7 @@ async function runPack(bin, packDir) {
   const round1 = await runOneRound({ bin, roundDir: join(packDir, 'round-1') })
   process.stdout.write('round 2\n')
   const round2 = await runOneRound({ bin, roundDir: join(packDir, 'round-2') })
-  const compare = compareRuns(
-    round1.evidence,
-    round2.evidence,
-    round1.auditText,
-    round2.auditText,
-    round1.admitTraceText,
-    round2.admitTraceText,
-  )
+  const compare = compareRuns(round1.verify, round2.verify)
   writeFileSync(join(packDir, 'verify-report.json'), JSON.stringify(compare, null, 2) + '\n')
   const shaList = []
   for (const p of walkFiles(packDir)) {

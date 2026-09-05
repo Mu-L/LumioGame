@@ -10,7 +10,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test as nodeTest } from 'node:test'
@@ -27,6 +27,16 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 export function oracleFilePath() {
   return fileURLToPath(import.meta.url)
+}
+
+function withOracleTempDir(label, callback) {
+  const safeLabel = String(label).replace(/[^a-z0-9_-]/gi, '-')
+  const dir = mkdtempSync(join(dirname(oracleFilePath()), `.tmp-oracle-${safeLabel}-`))
+  try {
+    return callback(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 export function oracleSha256(p = oracleFilePath()) {
@@ -69,12 +79,11 @@ function u64ToHex16(value) {
   return n.toString(16).padStart(16, '0')
 }
 
-/** 32-hex sender. Accepts 32-hex or two u64 halves. Does not use a u128 type. */
+/** C-1 canonical NetEntityId: exactly 32 lowercase hex characters. */
 export function parseSenderNetEntityId(rec) {
   if (rec == null) return null
   if (typeof rec === 'string') {
-    const s = rec.toLowerCase()
-    if (/^[0-9a-f]{32}$/.test(s) && !/^0+$/.test(s)) return s
+    if (/^[0-9a-f]{32}$/.test(rec) && !/^0+$/.test(rec)) return rec
     return null
   }
   if (!isObject(rec)) return null
@@ -86,14 +95,7 @@ export function parseSenderNetEntityId(rec) {
     const parsed = parseSenderNetEntityId(rec.netEntityId)
     if (parsed) return parsed
   }
-  const instance = rec.senderNetEntityIdInstanceId ?? rec.instanceId ?? rec.netEntityIdInstanceId
-  const counter = rec.senderNetEntityIdCounter ?? rec.counter ?? rec.netEntityIdCounter
-  if (instance == null || counter == null) return null
-  const hi = u64ToHex16(instance)
-  const lo = u64ToHex16(counter)
-  if (!hi || !lo) return null
-  const hex = hi + lo
-  return /^0+$/.test(hex) ? null : hex
+  return null
 }
 
 export function isHostNetEntityId(id) {
@@ -108,7 +110,7 @@ export function isHostNetEntityId(id) {
 export function eventOrderKey(tuple) {
   if (typeof tuple === 'string') return tuple
   if (!isObject(tuple)) return String(tuple)
-  const sender = parseSenderNetEntityId(tuple) ?? String(tuple.senderNetEntityId ?? '')
+  const sender = parseSenderNetEntityId(tuple) ?? ''
   return [tuple.messageId, tuple.roomSequence, sender, tuple.appliedTick].join('|')
 }
 
@@ -155,10 +157,30 @@ function kindOf(ev) {
 }
 
 function entityTypeOf(ev) {
-  const t = ev.entityType ?? ev.entityKind
-  if (t === 'bot' || t === 'Bot' || t === 'BotEntity') return 'bot'
-  if (t === 'player' || t === 'Player' || t === 'PlayerEntity') return 'player'
-  return null
+  const t = ev?.entityType
+  return t === 'world' || t === 'player' || t === 'bot' ? t : null
+}
+
+function entityRecordFailures(serverEvents) {
+  const failures = []
+  const checkRecord = (record, label) => {
+    if (typeof record?.netEntityId !== 'string' || parseSenderNetEntityId(record.netEntityId) == null) {
+      failures.push({ check: 'census:id', message: `${label} netEntityId must be a lowercase canonical 32-hex string` })
+    }
+    if (entityTypeOf(record) == null) {
+      failures.push({ check: 'census:entity-type', message: `${label} entityType must be exactly world, player, or bot` })
+    }
+  }
+  for (const ev of serverRecordsWithRuntimeFrames(serverEvents)) {
+    if (!isObject(ev)) continue
+    const kind = kindOf(ev)
+    if (kind === 'entity_admitted' || (kind === 'admit' && (ev.netEntityId != null || ev.entityType != null))) {
+      checkRecord(ev, `server ${kind}`)
+    }
+    if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
+    for (const create of ev.creates) checkRecord(create, 'WorldChange create')
+  }
+  return failures
 }
 
 function isRuntimeDrain(ev) {
@@ -204,13 +226,13 @@ export function censusFromServerLogs(serverEvents) {
     if (kind === 'entity_admitted' || kind === 'admit') {
       const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
       const type = entityTypeOf(ev)
-      if (id != null && type != null) byId.set(id, type)
+      if (id != null && (type === 'player' || type === 'bot')) byId.set(id, type)
     }
     if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
     for (const create of ev.creates) {
       const id = parseSenderNetEntityId(create) ?? parseSenderNetEntityId(create?.netEntityId)
       const type = entityTypeOf(create)
-      if (id != null && type != null) byId.set(id, type)
+      if (id != null && (type === 'player' || type === 'bot')) byId.set(id, type)
     }
   }
   let botCount = 0
@@ -223,39 +245,50 @@ export function censusFromServerLogs(serverEvents) {
 }
 
 function decodeHexText(value) {
-  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value)) return null
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/.test(value)) return null
   const bytes = Buffer.from(value, 'hex')
-  try { return new TextDecoder().decode(bytes) } catch { return null }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { return null }
+}
+
+function isCanonicalC1Counter(value) {
+  return Number.isSafeInteger(value) && value >= 0
 }
 
 function chatEventFromRpc(rpc) {
   if (!isObject(rpc) || rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
-  const sender = parseSenderNetEntityId(rpc.sender)
-  if (sender == null || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
+  const target = typeof rpc.target === 'string' ? parseSenderNetEntityId(rpc.target) : null
+  const sender = typeof rpc.sender === 'string' ? parseSenderNetEntityId(rpc.sender) : null
+  if (target == null || sender == null || rpc.scope !== 'room'
+    || !isCanonicalC1Counter(rpc.messageId)
+    || !isCanonicalC1Counter(rpc.roomSequence)
+    || !isCanonicalC1Counter(rpc.appliedTick)) return null
   const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
-  const text = decodeHexText(encoded) ?? (typeof rpc.text === 'string' ? rpc.text : '')
-  return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
+  const text = decodeHexText(encoded)
+  if (text == null) return null
+  return { targetNetEntityId: target, scope: rpc.scope, messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
 }
 
-function chatEventsFromClient(clientEvents) {
-  const events = []
-  const records = [...(clientEvents ?? []).map((record) => record?.ev), ...runtimeDrainFrames(clientEvents)]
-  for (const ev of records) {
-    const kind = kindOf(ev)
-    if (kind === 'chat.event' || kind === 'event') {
-      const sender = parseSenderNetEntityId(ev)
-      if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
-      events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
-      continue
-    }
+function runtimeRpcSequence(events) {
+  const chatEvents = []
+  let present = false
+  let invalid = 0
+  for (const ev of runtimeDrainFrames(events)) {
     if (ev.messageType === 'WorldChange' && Array.isArray(ev.rpcs)) {
+      present = true
       for (const rpc of ev.rpcs) {
         const parsed = chatEventFromRpc(rpc)
-        if (parsed) events.push(parsed)
+        if (parsed) chatEvents.push(parsed)
+        else if (isObject(rpc) && rpc.componentId === 'ChatComponent' && rpc.method === 'OnChatMessage') invalid++
       }
     }
   }
-  return events
+  return { present, events: chatEvents, invalid }
+}
+
+function chatEventsFromRuntimeDrains(serverEvents, clientEvents) {
+  const server = runtimeRpcSequence(serverEvents)
+  if (server.present) return server
+  return runtimeRpcSequence(clientEvents)
 }
 
 function windowLinesFromClient(clientEvents) {
@@ -265,8 +298,40 @@ function windowLinesFromClient(clientEvents) {
     if (ev.phase === 'restored') continue
     lines.push(ev)
   }
-  if (lines.length > 0) return lines
-  return chatEventsFromClient(clientEvents)
+  return lines
+}
+
+function playwrightNetworkRpcSequence(clientEvents) {
+  const events = []
+  let present = false
+  let invalid = 0
+  for (const record of clientEvents ?? []) {
+    const ev = record?.ev
+    if (kindOf(ev) !== 'playwright.network'
+      || ev.source !== 'playwright'
+      || ev.transport !== 'websocket'
+      || ev.direction !== 'received'
+      || ev.messageType !== 'WorldChange') continue
+    present = true
+    if (ev.ran !== true || ev.receivedFromNetwork !== true) {
+      invalid++
+      continue
+    }
+    if (!['chromium', 'chrome', 'msedge'].includes(String(ev.browser ?? '').toLowerCase())) {
+      invalid++
+      continue
+    }
+    if (!Array.isArray(ev.rpcs)) {
+      invalid++
+      continue
+    }
+    for (const rpc of ev.rpcs) {
+      const parsed = chatEventFromRpc(rpc)
+      if (parsed) events.push(parsed)
+      else if (isObject(rpc) && rpc.componentId === 'ChatComponent' && rpc.method === 'OnChatMessage') invalid++
+    }
+  }
+  return { present, events, invalid }
 }
 
 function hasKind(events, kind) {
@@ -345,6 +410,7 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   }
 
   const census = censusFromServerLogs(serverEvents)
+  failures.push(...entityRecordFailures(serverEvents))
   if (census.botCount !== 100) {
     failures.push({ check: 'census:bots', message: `BotEntity 计数 ${census.botCount},应为 100` })
   }
@@ -366,15 +432,61 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's1:wrong-password', message: 'account log must observe wrong_password' })
   }
 
-  const observed = chatEventsFromClient(clientEvents)
-  if (observed.length === 0) {
-    failures.push({ check: 's3:chat-event', message: 'client logs must contain received chat.event' })
+  const runtimeRpc = chatEventsFromRuntimeDrains(serverEvents, clientEvents)
+  const runtimeObserved = runtimeRpc.events
+  const observed = runtimeObserved
+  if (!runtimeRpc.present || runtimeObserved.length === 0) {
+    failures.push({ check: 's3:runtime-rpc', message: 'Runtime drain must contain WorldChange.rpcs OnChatMessage evidence' })
+  }
+  if (runtimeRpc.invalid > 0) {
+    failures.push({ check: 's3:runtime-rpc-format', message: 'Runtime OnChatMessage args[0] must be lowercase hex' })
+  }
+
+  for (let i = 1; i < runtimeObserved.length; i++) {
+    if (runtimeObserved[i].roomSequence <= runtimeObserved[i - 1].roomSequence) {
+      failures.push({
+        check: 's6:rpc-roomSequence',
+        message: 'Runtime drain WorldChange.rpcs must have strictly increasing roomSequence',
+      })
+      break
+    }
+  }
+
+  const windowLines = windowLinesFromClient(clientEvents)
+  const browserNetwork = playwrightNetworkRpcSequence(clientEvents)
+  if (!browserNetwork.present || browserNetwork.events.length === 0) {
+    failures.push({ check: 's6:playwright-network', message: 'client logs must contain Playwright websocket WorldChange evidence' })
+  }
+  if (browserNetwork.invalid > 0) {
+    failures.push({ check: 's6:playwright-network-format', message: 'Playwright websocket evidence contains invalid Runtime OnChatMessage records' })
+  }
+  if (browserNetwork.events.length > 0) {
+    const networkOrder = browserNetwork.events.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    const runtimeOrder = runtimeObserved.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    if (JSON.stringify(networkOrder) !== JSON.stringify(runtimeOrder)) {
+      failures.push({ check: 's6:playwright-network-order', message: 'Playwright websocket WorldChange records must match Runtime records exactly' })
+    }
+  }
+  if (runtimeObserved.length > 0) {
+    const runtimeOrder = runtimeObserved.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    const windowOrder = windowLines.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    if (runtimeObserved.length !== windowLines.length || JSON.stringify(runtimeOrder) !== JSON.stringify(windowOrder)) {
+      failures.push({
+        check: 's6:rpc-event-order',
+        message: 'Runtime drain WorldChange.rpcs must exactly match client window event identity, decoded text, and order',
+      })
+    }
   }
 
   const runtimeQueries = runtimeDrainQueries(serverEvents).concat(runtimeDrainQueries(clientEvents))
-  const queryBlob = blobOf(runtimeQueries.map((ev) => ({ ev })))
+  const queryOutcomes = new Set(runtimeQueries
+    .map((query) => typeof query.outcome === 'string' ? query.outcome.toLowerCase() : '')
+    .filter(Boolean))
   for (const needed of ['unauthorized', 'invisible', 'stale']) {
-    if (!queryBlob.includes(needed)) {
+    const present = needed === 'stale'
+      ? queryOutcomes.has('stale') || queryOutcomes.has('stale_generation')
+      : queryOutcomes.has(needed)
+    if (!present) {
       failures.push({ check: 's5:missing', message: `logs missing query outcome ${needed}` })
     }
   }
@@ -398,7 +510,6 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's6:mappingId', message: `mappingId=${tick.mappingId}, expected chat.input` })
   }
 
-  const windowLines = windowLinesFromClient(clientEvents)
   if (windowLines.length !== 101) {
     failures.push({ check: 's6:window', message: `client window lines ${windowLines.length}, expected 101` })
   } else {
@@ -460,7 +571,7 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   if (observed.length !== 101) {
     failures.push({
       check: 's11:synthesized',
-      message: 'eventOrder/appliedTicks must come from client-received chat.event, not send counts',
+      message: 'eventOrder/appliedTicks must contain exactly 101 events from the authoritative observed source',
     })
   }
 
@@ -521,7 +632,7 @@ function ndjson(rows) {
   return rows.map((row) => JSON.stringify(row)).join('\n') + '\n'
 }
 
-export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } = {}) {
+export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true, browserNetwork = true } = {}) {
   mkdirSync(join(dir, 'round-1', 'server'), { recursive: true })
   mkdirSync(join(dir, 'round-1', 'client'), { recursive: true })
   mkdirSync(join(dir, 'round-2', 'server'), { recursive: true })
@@ -529,6 +640,7 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
   const instanceId = 0x1000000000000001n
   const admits = []
   const events = []
+  const rpcs = []
   const windows = []
   for (let i = 1; i <= 101; i++) {
     const hex = senderHex(instanceId, i)
@@ -553,6 +665,17 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
       text: `hello-${i}`,
       appliedTick: 1,
     })
+    rpcs.push({
+      target: hex,
+      componentId: 'ChatComponent',
+      method: 'OnChatMessage',
+      sender: hex,
+      messageId: i,
+      roomSequence: i,
+      appliedTick: 1,
+      scope: 'room',
+      args: [Buffer.from(`hello-${i}`, 'utf8').toString('hex')],
+    })
     windows.push({
       kind: 'chat.window',
       phase: 'live',
@@ -568,7 +691,7 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
     { kind: 'account', wrongPasswordCode: 'wrong_password' },
     {
       kind: 'drain',
-      frames: [],
+      frames: [{ messageType: 'WorldChange', rpcs }],
       queries: [
         { type: 'AttributeQueryResult', requestId: 'query-unauthorized', outcome: 'unauthorized' },
         { type: 'AttributeQueryResult', requestId: 'query-invisible', outcome: 'invisible' },
@@ -609,6 +732,19 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
       payloadSha256: '5dbd584f1718b8bcd0dab4abeea83169f4a990defab81a8316ed845798d92dab',
     },
   ]
+  if (browserNetwork) {
+    extraClient.push({
+      kind: 'playwright.network',
+      source: 'playwright',
+      browser: 'chromium',
+      ran: true,
+      receivedFromNetwork: true,
+      transport: 'websocket',
+      direction: 'received',
+      messageType: 'WorldChange',
+      rpcs,
+    })
+  }
   const serverText = ndjson([...extraServer, ...admits])
   const clientText = ndjson([...extraClient, ...events, ...windows])
   const toWrite = crlf ? (s) => s.replace(/\n/g, '\r\n') : (s) => s
@@ -655,24 +791,40 @@ const test = process.env.NODE_TEST_CONTEXT ? nodeTest : () => {}
 test('oracleSha256 normalizes CRLF to LF before hashing', () => {
   const lf = 'line-one\nline-two\n'
   const crlf = 'line-one\r\nline-two\r\n'
-  const dir = join(dirname(oracleFilePath()), '.tmp-oracle-sha')
-  mkdirSync(dir, { recursive: true })
-  const lfPath = join(dir, 'lf.txt')
-  const crlfPath = join(dir, 'crlf.txt')
-  writeFileSync(lfPath, lf)
-  writeFileSync(crlfPath, crlf)
-  assert.equal(oracleSha256(lfPath), oracleSha256(crlfPath))
-  assert.notEqual(
-    createHash('sha256').update(readFileSync(crlfPath)).digest('hex'),
-    oracleSha256(crlfPath),
-  )
+  withOracleTempDir('sha', (dir) => {
+    const lfPath = join(dir, 'lf.txt')
+    const crlfPath = join(dir, 'crlf.txt')
+    writeFileSync(lfPath, lf)
+    writeFileSync(crlfPath, crlf)
+    assert.equal(oracleSha256(lfPath), oracleSha256(crlfPath))
+    assert.notEqual(
+      createHash('sha256').update(readFileSync(crlfPath)).digest('hex'),
+      oracleSha256(crlfPath),
+    )
+  })
 })
 
-test('parseSenderNetEntityId: 32-hex equals two u64 halves', () => {
+test('oracle test temp directories are unique and cleaned up', () => {
+  let first
+  let second
+  withOracleTempDir('isolation', (dir) => {
+    first = dir
+    writeFileSync(join(dir, 'marker.txt'), 'first\n')
+  })
+  withOracleTempDir('isolation', (dir) => {
+    second = dir
+    writeFileSync(join(dir, 'marker.txt'), 'second\n')
+  })
+  assert.notEqual(first, second)
+  assert.equal(existsSync(first), false)
+  assert.equal(existsSync(second), false)
+})
+
+test('parseSenderNetEntityId accepts only the canonical 32-hex string', () => {
   const hex = senderHex(0n, 101n)
   assert.equal(hex, '00000000000000000000000000000065')
   assert.equal(parseSenderNetEntityId(hex), hex)
-  assert.equal(parseSenderNetEntityId({ senderNetEntityIdInstanceId: 0, senderNetEntityIdCounter: 101 }), hex)
+  assert.equal(parseSenderNetEntityId({ senderNetEntityIdInstanceId: 0, senderNetEntityIdCounter: 101 }), null)
   assert.equal(isHostNetEntityId('101'), false)
   assert.equal(isLauncherLoopIndex('101'), true)
   assert.equal(isHostNetEntityId(hex), true)
@@ -687,8 +839,14 @@ test('parseSenderNetEntityId: Runtime instanceId 0x1000000000000001 keeps low bi
       senderNetEntityIdInstanceId: 0x1000000000000001n,
       senderNetEntityIdCounter: 0x10n,
     }),
-    hex,
+    null,
   )
+})
+
+test('parseSenderNetEntityId rejects uppercase canonical IDs instead of normalizing them', () => {
+  const uppercase = 'ABCDEFABCDEFABCDEFABCDEFABCDEFAB'
+  assert.equal(parseSenderNetEntityId(uppercase), null)
+  assert.equal(isHostNetEntityId(uppercase), false)
 })
 
 test('空日志目录必须 FAIL', () => {
@@ -697,14 +855,52 @@ test('空日志目录必须 FAIL', () => {
 })
 
 test('harness evidence.json / timer-trace.json 不是输入', () => {
-  const dir = join(dirname(oracleFilePath()), '.tmp-oracle-evidence-only')
-  mkdirSync(join(dir, 'round-1'), { recursive: true })
-  mkdirSync(join(dir, 'round-2'), { recursive: true })
-  writeFileSync(join(dir, 'round-1', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
-  writeFileSync(join(dir, 'round-2', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
-  const report = verifyEvidenceDir(dir)
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+  withOracleTempDir('evidence-only', (dir) => {
+    mkdirSync(join(dir, 'round-1'), { recursive: true })
+    mkdirSync(join(dir, 'round-2'), { recursive: true })
+    writeFileSync(join(dir, 'round-1', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
+    writeFileSync(join(dir, 'round-2', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
+    const report = verifyEvidenceDir(dir)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+  })
+})
+
+test('replay-only logs fail without real Playwright websocket evidence', () => {
+  withOracleTempDir('playwright-required', (root) => {
+    writeOracleMinFixture(root, { browserNetwork: false })
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, false)
+    assert.ok(report.round1.failures.some((failure) => failure.check === 's6:playwright-network'), JSON.stringify(report.failures))
+  })
+})
+
+test('Playwright websocket WorldChange evidence must match Runtime RPC identity and order', () => {
+  withOracleTempDir('playwright-network-order', (root) => {
+    writeOracleMinFixture(root)
+    const clientPath = join(root, 'round-1', 'client', 'client.ndjson')
+    const rows = parseNdjson(readFileSync(clientPath, 'utf8')).map((record) => record.ev)
+    const network = rows.find((ev) => kindOf(ev) === 'playwright.network')
+    network.rpcs = [...network.rpcs].reverse()
+    writeFileSync(clientPath, ndjson(rows))
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), clientPath)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:playwright-network-order'), JSON.stringify(report.failures))
+  })
+})
+
+test('Playwright evidence must explicitly attest a real network observation', () => {
+  withOracleTempDir('playwright-network-attestation', (root) => {
+    writeOracleMinFixture(root)
+    const clientPath = join(root, 'round-1', 'client', 'client.ndjson')
+    const rows = parseNdjson(readFileSync(clientPath, 'utf8')).map((record) => record.ev)
+    const network = rows.find((ev) => kindOf(ev) === 'playwright.network')
+    network.receivedFromNetwork = false
+    writeFileSync(clientPath, ndjson(rows))
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), clientPath)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:playwright-network-format'), JSON.stringify(report.failures))
+  })
 })
 
 test('drain.queries are the only accepted Runtime query result source', () => {
@@ -717,44 +913,45 @@ test('drain.queries are the only accepted Runtime query result source', () => {
 })
 
 test('fixture --dir 在 LF 与 CRLF 下均为 ok', () => {
-  const root = dirname(oracleFilePath())
-  const lfDir = join(root, '.tmp-oracle-min-lf')
-  const crlfDir = join(root, '.tmp-oracle-min-crlf')
-  writeOracleMinFixture(lfDir, { crlf: false })
-  writeOracleMinFixture(crlfDir, { crlf: true })
-  const lf = verifyEvidenceDir(lfDir)
-  const crlf = verifyEvidenceDir(crlfDir)
-  assert.equal(lf.ok, true, JSON.stringify(lf.failures))
-  assert.equal(crlf.ok, true, JSON.stringify(crlf.failures))
-  assert.equal(JSON.stringify(lf.round1.eventOrder), JSON.stringify(crlf.round1.eventOrder))
+  withOracleTempDir('min-lf', (lfDir) => {
+    withOracleTempDir('min-crlf', (crlfDir) => {
+      writeOracleMinFixture(lfDir, { crlf: false })
+      writeOracleMinFixture(crlfDir, { crlf: true })
+      const lf = verifyEvidenceDir(lfDir)
+      const crlf = verifyEvidenceDir(crlfDir)
+      assert.equal(lf.ok, true, JSON.stringify(lf.failures))
+      assert.equal(crlf.ok, true, JSON.stringify(crlf.failures))
+      assert.equal(JSON.stringify(lf.round1.eventOrder), JSON.stringify(crlf.round1.eventOrder))
+    })
+  })
 })
 
 test('compareRuns 逐位比较 eventOrder 四元组；同多重集不同顺序必须 FAIL', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-order')
-  writeOracleMinFixture(dir)
-  const good = verifyEvidenceDir(dir)
-  assert.equal(good.ok, true, JSON.stringify(good.failures))
-  const drifted = structuredClone(good.round2)
-  const last = drifted.eventOrder[100]
-  drifted.eventOrder[100] = drifted.eventOrder[99]
-  drifted.eventOrder[99] = last
-  const cmp = compareRuns(good.round1, drifted)
-  assert.equal(cmp.ok, false)
-  assert.ok(cmp.failures.some((f) => f.check === 'event-order-compare'), JSON.stringify(cmp.failures))
+  withOracleTempDir('min-order', (dir) => {
+    writeOracleMinFixture(dir)
+    const good = verifyEvidenceDir(dir)
+    assert.equal(good.ok, true, JSON.stringify(good.failures))
+    const drifted = structuredClone(good.round2)
+    const last = drifted.eventOrder[100]
+    drifted.eventOrder[100] = drifted.eventOrder[99]
+    drifted.eventOrder[99] = last
+    const cmp = compareRuns(good.round1, drifted)
+    assert.equal(cmp.ok, false)
+    assert.ok(cmp.failures.some((f) => f.check === 'event-order-compare'), JSON.stringify(cmp.failures))
+  })
 })
 
 test('compareRuns appliedTicks 逐值比较；只比长度必须 FAIL', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-ticks')
-  writeOracleMinFixture(dir)
-  const good = verifyEvidenceDir(dir)
-  const drifted = structuredClone(good.round2)
-  assert.equal(drifted.appliedTicks.length, 101)
-  drifted.appliedTicks = drifted.appliedTicks.map((tick, i) => (i === 50 ? tick + 1 : tick))
-  const cmp = compareRuns(good.round1, drifted)
-  assert.equal(cmp.ok, false)
-  assert.ok(cmp.failures.some((f) => f.check === 'applied-tick-compare'), JSON.stringify(cmp.failures))
+  withOracleTempDir('min-ticks', (dir) => {
+    writeOracleMinFixture(dir)
+    const good = verifyEvidenceDir(dir)
+    const drifted = structuredClone(good.round2)
+    assert.equal(drifted.appliedTicks.length, 101)
+    drifted.appliedTicks = drifted.appliedTicks.map((tick, i) => (i === 50 ? tick + 1 : tick))
+    const cmp = compareRuns(good.round1, drifted)
+    assert.equal(cmp.ok, false)
+    assert.ok(cmp.failures.some((f) => f.check === 'applied-tick-compare'), JSON.stringify(cmp.failures))
+  })
 })
 
 test('committed fixture --dir 为 ok', () => {
@@ -768,14 +965,47 @@ test('committed fixture --dir 为 ok', () => {
 })
 
 test('101 窗口行来自客户端日志且 roomSequence 严格递增', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-window')
-  writeOracleMinFixture(dir)
-  const report = verifyRunFromLogs(join(dir, 'round-1', 'server'), join(dir, 'round-1', 'client'))
-  assert.equal(report.windowLines.length, 101)
-  for (let i = 1; i < report.windowLines.length; i++) {
-    assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
-  }
+  withOracleTempDir('min-window', (dir) => {
+    writeOracleMinFixture(dir)
+    const report = verifyRunFromLogs(join(dir, 'round-1', 'server'), join(dir, 'round-1', 'client'))
+    assert.equal(report.windowLines.length, 101)
+    for (let i = 1; i < report.windowLines.length; i++) {
+      assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
+    }
+  })
+})
+
+test('query outcome checks ignore requestId text and require the formal outcome field', () => {
+  withOracleTempDir('query-outcome-field', (root) => {
+    const serverPath = join(root, 'server', 'server.ndjson')
+    const clientPath = join(root, 'client', 'client.ndjson')
+    mkdirSync(dirname(serverPath), { recursive: true })
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(serverPath, ndjson([
+      { kind: 'host', process: 'lumio-entity-chat-replay' },
+      { kind: 'drain', frames: [], queries: [
+        { requestId: 'query-unauthorized', outcome: 'ok' },
+        { requestId: 'query-invisible', outcome: 'ok' },
+        { requestId: 'query-stale', outcome: 'ok' },
+      ] },
+    ]))
+    writeFileSync(clientPath, '')
+    const report = verifyRunFromLogs(join(root, 'server'), join(root, 'client'))
+    assert.ok(report.failures.filter((failure) => failure.check === 's5:missing').length >= 3)
+  })
+})
+
+test('verifyRunFromLogs rejects BotEntity and PlayerEntity wire aliases', () => {
+  withOracleTempDir('entity-type-alias', (root) => {
+    writeOracleMinFixture(root)
+    const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
+    const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+    rows.find((ev) => kindOf(ev) === 'entity_admitted').entityType = 'BotEntity'
+    writeFileSync(serverPath, ndjson(rows))
+    const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'census:bots'), JSON.stringify(report.failures))
+  })
 })
 
 test('parseNdjson preserves malformed and non-object records for fail-closed verification', () => {
@@ -791,20 +1021,325 @@ test('parseNdjson preserves malformed and non-object records for fail-closed ver
 })
 
 test('verifyRunFromLogs rejects malformed and non-object log records', () => {
-  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-record')
-  writeOracleMinFixture(root)
-  writeFileSync(join(root, 'round-1', 'server', 'server.ndjson'), '[]\n{"kind":"host","process":"lumio-entity-chat-replay"}\n')
-  const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed'))
+  withOracleTempDir('malformed-record', (root) => {
+    writeOracleMinFixture(root)
+    writeFileSync(join(root, 'round-1', 'server', 'server.ndjson'), '[]\n{"kind":"host","process":"lumio-entity-chat-replay"}\n')
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed'))
+  })
 })
 
 test('verifyRunFromLogs rejects non-object Runtime drain records', () => {
-  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-drain')
-  writeOracleMinFixture(root)
-  const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
-  writeFileSync(serverPath, readFileSync(serverPath, 'utf8') + '{"kind":"drain","frames":[],"queries":[null]}\n')
-  const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
+  withOracleTempDir('malformed-drain', (root) => {
+    writeOracleMinFixture(root)
+    const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
+    writeFileSync(serverPath, readFileSync(serverPath, 'utf8') + '{"kind":"drain","frames":[],"queries":[null]}\n')
+    const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
+  })
+})
+
+function appendClientRuntimeRpcDrain(root, round, mutate = (rpcs) => rpcs) {
+  const clientPath = join(root, round, 'client', 'client.ndjson')
+  const received = parseNdjson(readFileSync(clientPath, 'utf8'))
+    .map((record) => record.ev)
+    .filter((ev) => kindOf(ev) === 'chat.window' && ev.phase === 'live')
+  const rpcs = received.map((ev) => ({
+    target: ev.senderNetEntityId,
+    componentId: 'ChatComponent',
+    method: 'OnChatMessage',
+    sender: ev.senderNetEntityId,
+    messageId: ev.messageId,
+    roomSequence: ev.roomSequence,
+    appliedTick: ev.appliedTick,
+    scope: 'room',
+    args: [Buffer.from(ev.text, 'utf8').toString('hex')],
+  }))
+  const drain = {
+    kind: 'drain',
+    frames: [{ messageType: 'WorldChange', rpcs: mutate(rpcs) }],
+    queries: [],
+  }
+  writeFileSync(clientPath, readFileSync(clientPath, 'utf8') + JSON.stringify(drain) + '\n')
+}
+
+function mutateServerRuntimeRpcDrain(root, round, mutate) {
+  const serverPath = join(root, round, 'server', 'server.ndjson')
+  const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+  const drain = rows.find((ev) => kindOf(ev) === 'drain')
+  const frame = drain.frames.find((candidate) => candidate.messageType === 'WorldChange')
+  frame.rpcs = mutate(frame.rpcs)
+  writeFileSync(serverPath, ndjson(rows))
+}
+
+function clearServerRuntimeFrames(root, round) {
+  const serverPath = join(root, round, 'server', 'server.ndjson')
+  const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+  const drain = rows.find((ev) => kindOf(ev) === 'drain')
+  drain.frames = []
+  writeFileSync(serverPath, ndjson(rows))
+}
+
+test('Runtime drain WorldChange.rpcs are authoritative without double counting direct chat events', () => {
+  withOracleTempDir('rpc-authority', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      clearServerRuntimeFrames(root, round)
+      appendClientRuntimeRpcDrain(root, round)
+    }
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, true, JSON.stringify(report.failures))
+    assert.equal(report.round1.eventOrder.length, 101)
+    assert.equal(report.round1.appliedTicks.length, 101)
+  })
+})
+
+test('an observed Runtime WorldChange.rpcs sequence cannot fall back to direct chat events', () => {
+  withOracleTempDir('rpc-empty', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', () => [])
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's11:synthesized'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence rejects missing args even when rpc.text is present', () => {
+  withOracleTempDir('rpc-missing-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].text = 'hello-1'
+      delete changed[0].args
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence rejects non-hex args even when rpc.text is present', () => {
+  withOracleTempDir('rpc-non-hex-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args = ['not-hex']
+      changed[0].text = 'hello-1'
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires lowercase hex args', () => {
+  withOracleTempDir('rpc-uppercase-args', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = changed[0].args[0].toUpperCase()
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence rejects invalid UTF-8 instead of replacement text', () => {
+  withOracleTempDir('rpc-invalid-utf8', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = 'c3'
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires the formal target field', () => {
+  withOracleTempDir('rpc-missing-target', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      delete changed[0].target
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires the formal scope field', () => {
+  withOracleTempDir('rpc-missing-scope', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      delete changed[0].scope
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime decoded RPC text must match the corresponding client window event', () => {
+  withOracleTempDir('rpc-window-text', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = Buffer.from('tampered', 'utf8').toString('hex')
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-event-order'), JSON.stringify(report.failures))
+  })
+})
+
+test('client chat.event records cannot replace Runtime WorldChange.rpcs evidence', () => {
+  withOracleTempDir('rpc-required', (root) => {
+    writeOracleMinFixture(root)
+    clearServerRuntimeFrames(root, 'round-1')
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime drain WorldChange.rpcs require strictly increasing roomSequence', () => {
+  withOracleTempDir('rpc-sequence', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      mutateServerRuntimeRpcDrain(root, round, (rpcs) => {
+        const swapped = [...rpcs]
+        const earlier = swapped[49]
+        swapped[49] = swapped[50]
+        swapped[50] = earlier
+        return swapped
+      })
+    }
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-roomSequence'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime RPC C-1 counters reject non-canonical numeric mutations', () => {
+  const mutations = [
+    ['messageId', -1],
+    ['roomSequence', 1.5],
+    ['appliedTick', Number.MAX_SAFE_INTEGER + 1],
+  ]
+  for (const [field, value] of mutations) {
+    withOracleTempDir(`rpc-counter-${field}`, (root) => {
+      writeOracleMinFixture(root)
+      mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+        const changed = structuredClone(rpcs)
+        changed[0][field] = value
+        return changed
+      })
+      const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+      assert.equal(report.ok, false)
+      assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+    })
+  }
+})
+
+test('Runtime RPC C-1 counters reject NaN and Infinity', () => {
+  const base = {
+    target: senderHex(1n, 1n),
+    componentId: 'ChatComponent',
+    method: 'OnChatMessage',
+    sender: senderHex(1n, 1n),
+    messageId: 1,
+    roomSequence: 1,
+    appliedTick: 1,
+    scope: 'room',
+    args: [Buffer.from('hello', 'utf8').toString('hex')],
+  }
+  for (const field of ['messageId', 'roomSequence', 'appliedTick']) {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(chatEventFromRpc({ ...base, [field]: value }), null, `${field}=${value}`)
+    }
+  }
+})
+
+test('Runtime RPC C-1 roomSequence rejects duplicate mutations', () => {
+  withOracleTempDir('rpc-sequence-duplicate', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[1].roomSequence = changed[0].roomSequence
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-roomSequence'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime drain WorldChange.rpcs must exactly match received event identity and order', () => {
+  withOracleTempDir('rpc-identity', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      mutateServerRuntimeRpcDrain(root, round, (rpcs) => {
+        const changed = structuredClone(rpcs)
+        const earlierSender = changed[49].sender
+        changed[49].sender = changed[50].sender
+        changed[50].sender = earlierSender
+        return changed
+      })
+    }
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-event-order'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime RPC evidence cannot replace missing client window events', () => {
+  withOracleTempDir('rpc-window-required', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      clearServerRuntimeFrames(root, round)
+      appendClientRuntimeRpcDrain(root, round)
+      const clientPath = join(root, round, 'client', 'client.ndjson')
+      const rows = parseNdjson(readFileSync(clientPath, 'utf8'))
+        .map((record) => record.ev)
+        .filter((ev) => kindOf(ev) !== 'chat.window')
+      writeFileSync(clientPath, ndjson(rows))
+    }
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, false)
+    assert.ok(report.round1.failures.some((failure) => failure.check === 's6:window'), JSON.stringify(report.failures))
+  })
+})
+
+test('census excludes the Runtime WorldEntity from player and total counts', () => {
+  const records = [{ ev: {
+    kind: 'drain',
+    frames: [{
+      messageType: 'WorldChange',
+      creates: [
+        { entityType: 'world', netEntityId: senderHex(1n, 1n), fields: [] },
+        { entityType: 'player', netEntityId: senderHex(1n, 2n), fields: [] },
+      ],
+    }],
+    queries: [],
+  } }]
+  assert.deepEqual(censusFromServerLogs(records), {
+    botCount: 0,
+    playerCount: 1,
+    total: 1,
+    netEntityIds: [senderHex(1n, 2n)],
+  })
 })

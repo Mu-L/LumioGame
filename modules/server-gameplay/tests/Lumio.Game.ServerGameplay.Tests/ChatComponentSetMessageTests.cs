@@ -36,7 +36,7 @@ public sealed class ChatComponentSetMessageTests
 
         Assert.Equal(
             ChatOperationKind.Admitted,
-            ChatSetMessageSystem.Admit(manager, "room-01", senderA, "C1", 1UL, RuntimeChatInputFixture.Create(senderA, "gg", "C1")).Kind);
+            ChatSetMessageSystem.Admit(manager, "room-01", senderA, "C1", 1UL, RuntimeChatInputFixture.Create(1UL, senderA, "gg", "C1")).Kind);
         Assert.Equal(string.Empty, Component(manager, senderA).LastMessageText);
         Assert.Equal(string.Empty, Component(manager, senderB).LastMessageText);
 
@@ -61,7 +61,7 @@ public sealed class ChatComponentSetMessageTests
 
         Assert.Equal(
             ChatOperationKind.Admitted,
-            ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, "hello", "C1")).Kind);
+            ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(1UL, sender, "hello", "C1")).Kind);
         manager.Tick();
 
         ChatComponent component = Component(manager, sender);
@@ -81,7 +81,7 @@ public sealed class ChatComponentSetMessageTests
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         Assert.Equal(
             ChatOperationKind.Admitted,
-            ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, "keep", "C1")).Kind);
+            ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(1UL, sender, "keep", "C1")).Kind);
         manager.Tick();
         _ = manager.DrainOutbox();
         Assert.Equal("keep", Component(manager, sender).LastMessageText);
@@ -131,7 +131,7 @@ public sealed class ChatComponentSetMessageTests
         ChatOperationResult? admitted = null;
         var worker = new Thread(() =>
         {
-            admitted = ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(sender, "gg", "C1"));
+            admitted = ChatSetMessageSystem.Admit(manager, "room-01", sender, "C1", 1UL, RuntimeChatInputFixture.Create(1UL, sender, "gg", "C1"));
         });
         worker.IsBackground = true;
         worker.Start();

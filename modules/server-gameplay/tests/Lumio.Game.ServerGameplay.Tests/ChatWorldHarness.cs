@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using Lumio.GameRuntime.Ecs;
 using Lumio.GameRuntime.Samples.Username.Components.Identity;
@@ -20,6 +21,8 @@ internal static class ChatWorldHarness
             manager.Tick();
         }
 
+        var connections = new Dictionary<string, NetEntityId>(StringComparer.Ordinal);
+        int connectionIndex = 1;
         foreach (IdentityComponent identity in manager.World.Each<IdentityComponent>())
         {
             if (string.IsNullOrEmpty(identity.AccountId))
@@ -28,7 +31,11 @@ internal static class ChatWorldHarness
             }
 
             manager.Bind(identity.Entity);
+            connections.Add("C" + connectionIndex.ToString(CultureInfo.InvariantCulture), identity.Entity);
+            connectionIndex++;
         }
+
+        manager.AttachControlAdapter(new TestControlAdapter(connections));
 
         return manager;
     }
@@ -52,5 +59,40 @@ internal static class ChatWorldHarness
         }
 
         throw new InvalidOperationException("no member at " + index.ToString(CultureInfo.InvariantCulture));
+    }
+
+    private sealed class TestControlAdapter : IWorldControlAdapter
+    {
+        private readonly IReadOnlyDictionary<string, NetEntityId> _byConnection;
+
+        public TestControlAdapter(IReadOnlyDictionary<string, NetEntityId> byConnection) =>
+            _byConnection = byConnection;
+
+        public bool TryHandle(WorldMessage message, out ErrorMessage? failure)
+        {
+            failure = null;
+            return false;
+        }
+
+        public bool TryResolveConnection(NetEntityId observerId, out string connection)
+        {
+            foreach (KeyValuePair<string, NetEntityId> pair in _byConnection)
+            {
+                if (pair.Value == observerId)
+                {
+                    connection = pair.Key;
+                    return true;
+                }
+            }
+
+            connection = string.Empty;
+            return false;
+        }
+
+        public bool TryResolveConnectionState(string connection, out NetEntityId observerId, out ulong generation)
+        {
+            generation = 1UL;
+            return _byConnection.TryGetValue(connection, out observerId);
+        }
     }
 }

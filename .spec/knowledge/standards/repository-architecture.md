@@ -11,8 +11,8 @@ metadata:
 ## 规范来源与优先级
 
 - Agent 的开发流程、测试政策和交付规则以 `.spec/` 为权威。
-- 产品与模块边界以根 [`README.md`](../../../README.md) 为本仓入口；共享架构以 `LumioGameEngineArchitecture` 的 `LGE-V1.4-2026-08-27` 为唯一来源，本仓 [`架构镜像`](../../../docs/architecture/LumioGameEngine_Architecture_v1.4.md) 只读。
-- 发生冲突时不得在本仓自行改写公共语义；先在架构源完成 ADR、Schema、Fixture 和新 Baseline，再同步镜像与本规范。
+- 产品与模块边界以根 [`README.md`](../../../README.md) 为本仓入口；共享架构以 `LumioGameEngine` 的 `.spec/knowledge/features/architecture.md` 为唯一来源，跨仓 ABI 与 wire 定义位于其 `engine/abi` 和 `engine/wire`。
+- 发生冲突时不得在本仓自行改写公共语义；先在契约所有者更新对应接口，再重编译直接消费者。
 
 ## 所有权边界
 

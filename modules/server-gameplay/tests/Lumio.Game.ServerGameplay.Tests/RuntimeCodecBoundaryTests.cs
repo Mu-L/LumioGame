@@ -14,6 +14,7 @@ public sealed class RuntimeCodecBoundaryTests
     {
         NetEntityId sender = new(ChatWorldHarness.InstanceId, 1UL);
         InputCommandMessage command = new(
+            17UL,
             ChatMapping.InputMappingId,
             sender,
             ChatPayload("hello"),
@@ -23,6 +24,7 @@ public sealed class RuntimeCodecBoundaryTests
         InputCommandMessage decoded = WireCodec.DecodeInput(encoded, sender);
 
         Assert.Equal(sender, decoded.Sender);
+        Assert.Equal(17UL, decoded.Sequence);
         Assert.Equal(ChatMapping.InputMappingId, decoded.MappingId);
         Assert.True(WireCodec.TryReadUtf8Payload(decoded.Payload.Span, out string text));
         Assert.Equal("hello", text);
@@ -34,6 +36,7 @@ public sealed class RuntimeCodecBoundaryTests
         using WorldManager manager = ChatWorldHarness.Boot();
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         byte[] envelope = WireCodec.EncodeInput(new InputCommandMessage(
+            1UL,
             ChatMapping.InputMappingId,
             sender,
             ChatPayload("hello"),
@@ -55,6 +58,7 @@ public sealed class RuntimeCodecBoundaryTests
         using WorldManager manager = ChatWorldHarness.Boot();
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         string envelope = Encoding.UTF8.GetString(WireCodec.EncodeInput(new InputCommandMessage(
+            1UL,
             ChatMapping.InputMappingId,
             sender,
             ChatPayload("hello"),
@@ -79,6 +83,7 @@ public sealed class RuntimeCodecBoundaryTests
         using WorldManager manager = ChatWorldHarness.Boot();
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         byte[] envelope = WireCodec.EncodeInput(new InputCommandMessage(
+            1UL,
             "chat.unknown",
             sender,
             ChatPayload("hello"),
@@ -97,6 +102,7 @@ public sealed class RuntimeCodecBoundaryTests
         using WorldManager manager = ChatWorldHarness.Boot();
         NetEntityId sender = ChatWorldHarness.Net(manager, 0);
         string encoded = Encoding.UTF8.GetString(WireCodec.EncodeInput(new InputCommandMessage(
+            1UL,
             ChatMapping.InputMappingId,
             sender,
             ChatPayload("hello"),
@@ -115,6 +121,54 @@ public sealed class RuntimeCodecBoundaryTests
     {
         Assert.Throws<FormatException>(() => WireCodec.DecodeInput(
             Encoding.UTF8.GetBytes("{\"messageType\":\"InputCommand\",\"commands\":null}")));
+    }
+
+    [Fact]
+    public void GameAdmitEnvelopePreservesDecodedSequence()
+    {
+        using WorldManager manager = ChatWorldHarness.Boot();
+        NetEntityId sender = ChatWorldHarness.Net(manager, 0);
+        byte[] envelope = WireCodec.EncodeInput(new InputCommandMessage(
+            2UL,
+            ChatMapping.InputMappingId,
+            sender,
+            ChatPayload("out-of-order"),
+            "C1"));
+
+        ChatOperationResult admitted = ChatSetMessageSystem.AdmitEnvelope(
+            manager, "room-01", sender, "C1", 1UL, envelope);
+
+        Assert.Equal(ChatOperationKind.Admitted, admitted.Kind);
+        manager.Tick();
+        Assert.Contains(manager.DrainOutbox(), static message => message is ErrorMessage { Code: "bad_envelope" });
+        Assert.Equal(string.Empty, ComponentText(manager, sender));
+    }
+
+    [Fact]
+    public void GameAdmitEnvelopePreservesHostConnectionGeneration()
+    {
+        using WorldManager manager = ChatWorldHarness.Boot();
+        NetEntityId sender = ChatWorldHarness.Net(manager, 0);
+        byte[] envelope = WireCodec.EncodeInput(new InputCommandMessage(
+            1UL,
+            ChatMapping.InputMappingId,
+            sender,
+            ChatPayload("stale-generation"),
+            "C1"));
+
+        ChatOperationResult admitted = ChatSetMessageSystem.AdmitEnvelope(
+            manager, "room-01", sender, "C1", 2UL, envelope);
+
+        Assert.Equal(ChatOperationKind.Admitted, admitted.Kind);
+        manager.Tick();
+        Assert.Contains(manager.DrainOutbox(), static message => message is ErrorMessage { Code: "session_closed" });
+        Assert.Equal(string.Empty, ComponentText(manager, sender));
+    }
+
+    private static string ComponentText(WorldManager manager, NetEntityId sender)
+    {
+        Assert.True(ChatSetMessageSystem.TryGetComponent(manager, sender, out ChatComponent? component));
+        return component.LastMessageText;
     }
 
     private static byte[] ChatPayload(string text)

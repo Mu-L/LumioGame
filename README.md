@@ -22,13 +22,11 @@
 </div>
 <!-- lumio-community:end -->
 
-## 架构基线
+## 架构与开发说明
 
-- Baseline：`LGE-V1.4-2026-08-27`
-- 唯一架构源：`LumioGameEngineArchitecture`
-- 本地镜像：[`docs/architecture/LumioGameEngine_Architecture_v1.4.md`](docs/architecture/LumioGameEngine_Architecture_v1.4.md)
-- ADR 索引：[`docs/architecture/ADR_INDEX.md`](docs/architecture/ADR_INDEX.md)
-- 最终 Review 合并稿：[`docs/architecture/LumioGameEngine_V3_Architecture_Review_Final_2026-08-27.md`](docs/architecture/LumioGameEngine_V3_Architecture_Review_Final_2026-08-27.md)
+本仓处于预上线 Living Architecture 阶段，不发布或复制冻结基线。跨仓边界与可运行接口的唯一来源是
+`LumioGameEngine` 的 `.spec/knowledge/features/architecture.md`；Runtime 通过
+`engine/abi/native-abi.json` 与 `engine/wire/*.json` 提供稳定接口，本仓不保存架构镜像。
 
 `LumioGame` 位于依赖图最上层，把 `LumioEngineSDK`、Server、Client 和玩法内容组合成具体游戏。它同时产出同一 `ProductId + GameReleaseId` 下的 Server Gameplay、Client Gameplay、Component Schema、Replication Mapping、配置、内容、Scenario、Migration 和签名发布清单。
 
@@ -36,7 +34,7 @@
 
 ## Architecture Gate
 
-Gameplay Schema、Replication Mapping、GAS/Config/Content/Migration Schema、ID Registry、正向/失败 Fixture 和契约校验器只维护在 `LumioGameEngineArchitecture`。新增玩法先补 Schema、Scenario、失败路径和 Replay 断言，再生成 Server/Client 产物；在架构源执行 `python3 tools/lumio_contract.py validate`，本仓库不手写重复 MessageId、Serializer 或 ABI 定义。
+Gameplay Schema、Replication Mapping、GAS/Config/Content/Migration Schema、ID Registry、正向/失败 Fixture 和契约校验器只由架构源 ABI/wire 契约维护。新增玩法先补 Schema、Scenario、失败路径和 Replay 断言，再生成 Server/Client 产物；本仓库不手写重复 MessageId、Serializer 或 ABI 定义。
 
 ## 拥有的状态与生命周期
 
