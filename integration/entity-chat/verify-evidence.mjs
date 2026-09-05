@@ -479,9 +479,14 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   }
 
   const runtimeQueries = runtimeDrainQueries(serverEvents).concat(runtimeDrainQueries(clientEvents))
-  const queryBlob = blobOf(runtimeQueries.map((ev) => ({ ev })))
+  const queryOutcomes = new Set(runtimeQueries
+    .map((query) => typeof query.outcome === 'string' ? query.outcome.toLowerCase() : '')
+    .filter(Boolean))
   for (const needed of ['unauthorized', 'invisible', 'stale']) {
-    if (!queryBlob.includes(needed)) {
+    const present = needed === 'stale'
+      ? queryOutcomes.has('stale') || queryOutcomes.has('stale_generation')
+      : queryOutcomes.has(needed)
+    if (!present) {
       failures.push({ check: 's5:missing', message: `logs missing query outcome ${needed}` })
     }
   }
@@ -967,6 +972,26 @@ test('101 窗口行来自客户端日志且 roomSequence 严格递增', () => {
     for (let i = 1; i < report.windowLines.length; i++) {
       assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
     }
+  })
+})
+
+test('query outcome checks ignore requestId text and require the formal outcome field', () => {
+  withOracleTempDir('query-outcome-field', (root) => {
+    const serverPath = join(root, 'server', 'server.ndjson')
+    const clientPath = join(root, 'client', 'client.ndjson')
+    mkdirSync(dirname(serverPath), { recursive: true })
+    mkdirSync(dirname(clientPath), { recursive: true })
+    writeFileSync(serverPath, ndjson([
+      { kind: 'host', process: 'lumio-entity-chat-replay' },
+      { kind: 'drain', frames: [], queries: [
+        { requestId: 'query-unauthorized', outcome: 'ok' },
+        { requestId: 'query-invisible', outcome: 'ok' },
+        { requestId: 'query-stale', outcome: 'ok' },
+      ] },
+    ]))
+    writeFileSync(clientPath, '')
+    const report = verifyRunFromLogs(join(root, 'server'), join(root, 'client'))
+    assert.ok(report.failures.filter((failure) => failure.check === 's5:missing').length >= 3)
   })
 })
 
