@@ -19,7 +19,6 @@
   <script type="module">
     import {
       appendAcceptedEvent,
-      applyFullSnapshot,
       createChatWindow,
       extractChatEventsFromFrame,
       formatLine,
@@ -57,13 +56,6 @@
     };
 
     function recordFrame(parsed, raw) {
-      if (parsed && parsed.messageType === "FullSnapshot") {
-        applyFullSnapshot(windowState);
-        result.received = [];
-        result.receivedChatEvent = false;
-        render();
-        return;
-      }
       if (parsed && parsed.messageType === "ConnectionSuperseded") {
         result.connectionSuperseded = true;
         return;
@@ -89,12 +81,6 @@
         }
         render();
         return accepted;
-      },
-      applyFullSnapshot: () => {
-        applyFullSnapshot(windowState);
-        result.received = [];
-        result.receivedChatEvent = false;
-        render();
       },
       recordFrame,
     };

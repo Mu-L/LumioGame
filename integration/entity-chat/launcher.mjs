@@ -4,7 +4,7 @@
  *
  * SUCCESS requires sibling lumio-entity-chat-replay. GameRoomHost and
  * lumio-mvp-host are never a SUCCESS path. Evidence fields come from
- * client-received chat.event and on-disk persist, never send-count synthesis.
+ * client-received ClientRpc and on-disk persist, never send-count synthesis.
  */
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'

@@ -1026,12 +1026,69 @@ test('encodeChatInput hello-Bot01 is lowercase hex payload + sha256', () => {
   assert.equal(cmd.payloadSha256, createHash('sha256').update(Buffer.from(cmd.payload, 'hex')).digest('hex'))
 })
 
-test('observedEventKey is sender:text:roomSequence from a received chat.event', () => {
+test('observedEventKey is sender:text:roomSequence from a received ClientRpc', () => {
   const sender = '10000000000000010000000000000065'
   assert.equal(
     observedEventKey({ senderNetEntityId: sender, text: 'hello-Bot01', roomSequence: 1, appliedTick: 7 }),
     `${sender}:hello-Bot01:1`,
   )
+})
+
+test('connectRoomWire presents ordered WorldChange ChatComponent RPCs', async () => {
+  const previousWebSocket = globalThis.WebSocket
+  const instances = []
+  class FakeWebSocket {
+    constructor(url) {
+      this.url = url
+      this.sent = []
+      this.listeners = new Map()
+      instances.push(this)
+    }
+
+    addEventListener(type, listener) {
+      const listeners = this.listeners.get(type) ?? []
+      listeners.push(listener)
+      this.listeners.set(type, listeners)
+    }
+
+    send(value) {
+      this.sent.push(value)
+    }
+
+    emit(type, event = {}) {
+      for (const listener of this.listeners.get(type) ?? []) listener(event)
+    }
+  }
+
+  const sender = '00000000000000010000000000000065'
+  const secondSender = '00000000000000010000000000000066'
+  const frame = {
+    messageType: 'WorldChange',
+    tick: 7,
+    creates: [],
+    fields: [],
+    destroys: [],
+    rpcs: [
+      { target: sender, componentId: 'ChatComponent', method: 'OnChatMessage', args: [Buffer.from('first').toString('hex')], messageId: 1, roomSequence: 1, sender, appliedTick: 7, scope: 'room' },
+      { target: secondSender, componentId: 'ChatComponent', method: 'OnChatMessage', args: [Buffer.from('second').toString('hex')], messageId: 2, roomSequence: 2, sender: secondSender, appliedTick: 7, scope: 'room' },
+    ],
+  }
+
+  globalThis.WebSocket = FakeWebSocket
+  try {
+    const pending = connectRoomWire('ws://room.test', 'c-browser')
+    const ws = instances[0]
+    ws.emit('open')
+    const client = await pending
+    ws.emit('message', { data: JSON.stringify(frame) })
+    assert.deepEqual(client.chatEvents, [
+      { messageId: 1, roomSequence: 1, senderNetEntityId: sender, text: 'first', appliedTick: 7 },
+      { messageId: 2, roomSequence: 2, senderNetEntityId: secondSender, text: 'second', appliedTick: 7 },
+    ])
+    assert.deepEqual(ws.sent, [JSON.stringify({ connectionId: 'c-browser' })])
+  } finally {
+    globalThis.WebSocket = previousWebSocket
+  }
 })
 
 test('indexBindings joins loginName from accountId and keeps Runtime 128-bit ids', () => {
