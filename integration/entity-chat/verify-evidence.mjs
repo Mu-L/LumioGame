@@ -10,7 +10,7 @@
  */
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { test as nodeTest } from 'node:test'
@@ -27,6 +27,16 @@ const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v)
 
 export function oracleFilePath() {
   return fileURLToPath(import.meta.url)
+}
+
+function withOracleTempDir(label, callback) {
+  const safeLabel = String(label).replace(/[^a-z0-9_-]/gi, '-')
+  const dir = mkdtempSync(join(dirname(oracleFilePath()), `.tmp-oracle-${safeLabel}-`))
+  try {
+    return callback(dir)
+  } finally {
+    rmSync(dir, { recursive: true, force: true })
+  }
 }
 
 export function oracleSha256(p = oracleFilePath()) {
@@ -655,17 +665,33 @@ const test = process.env.NODE_TEST_CONTEXT ? nodeTest : () => {}
 test('oracleSha256 normalizes CRLF to LF before hashing', () => {
   const lf = 'line-one\nline-two\n'
   const crlf = 'line-one\r\nline-two\r\n'
-  const dir = join(dirname(oracleFilePath()), '.tmp-oracle-sha')
-  mkdirSync(dir, { recursive: true })
-  const lfPath = join(dir, 'lf.txt')
-  const crlfPath = join(dir, 'crlf.txt')
-  writeFileSync(lfPath, lf)
-  writeFileSync(crlfPath, crlf)
-  assert.equal(oracleSha256(lfPath), oracleSha256(crlfPath))
-  assert.notEqual(
-    createHash('sha256').update(readFileSync(crlfPath)).digest('hex'),
-    oracleSha256(crlfPath),
-  )
+  withOracleTempDir('sha', (dir) => {
+    const lfPath = join(dir, 'lf.txt')
+    const crlfPath = join(dir, 'crlf.txt')
+    writeFileSync(lfPath, lf)
+    writeFileSync(crlfPath, crlf)
+    assert.equal(oracleSha256(lfPath), oracleSha256(crlfPath))
+    assert.notEqual(
+      createHash('sha256').update(readFileSync(crlfPath)).digest('hex'),
+      oracleSha256(crlfPath),
+    )
+  })
+})
+
+test('oracle test temp directories are unique and cleaned up', () => {
+  let first
+  let second
+  withOracleTempDir('isolation', (dir) => {
+    first = dir
+    writeFileSync(join(dir, 'marker.txt'), 'first\n')
+  })
+  withOracleTempDir('isolation', (dir) => {
+    second = dir
+    writeFileSync(join(dir, 'marker.txt'), 'second\n')
+  })
+  assert.notEqual(first, second)
+  assert.equal(existsSync(first), false)
+  assert.equal(existsSync(second), false)
 })
 
 test('parseSenderNetEntityId: 32-hex equals two u64 halves', () => {
@@ -697,14 +723,15 @@ test('空日志目录必须 FAIL', () => {
 })
 
 test('harness evidence.json / timer-trace.json 不是输入', () => {
-  const dir = join(dirname(oracleFilePath()), '.tmp-oracle-evidence-only')
-  mkdirSync(join(dir, 'round-1'), { recursive: true })
-  mkdirSync(join(dir, 'round-2'), { recursive: true })
-  writeFileSync(join(dir, 'round-1', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
-  writeFileSync(join(dir, 'round-2', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
-  const report = verifyEvidenceDir(dir)
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+  withOracleTempDir('evidence-only', (dir) => {
+    mkdirSync(join(dir, 'round-1'), { recursive: true })
+    mkdirSync(join(dir, 'round-2'), { recursive: true })
+    writeFileSync(join(dir, 'round-1', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
+    writeFileSync(join(dir, 'round-2', 'evidence.json'), '{"ok":true,"census":{"total":101}}\n')
+    const report = verifyEvidenceDir(dir)
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+  })
 })
 
 test('drain.queries are the only accepted Runtime query result source', () => {
@@ -717,44 +744,45 @@ test('drain.queries are the only accepted Runtime query result source', () => {
 })
 
 test('fixture --dir 在 LF 与 CRLF 下均为 ok', () => {
-  const root = dirname(oracleFilePath())
-  const lfDir = join(root, '.tmp-oracle-min-lf')
-  const crlfDir = join(root, '.tmp-oracle-min-crlf')
-  writeOracleMinFixture(lfDir, { crlf: false })
-  writeOracleMinFixture(crlfDir, { crlf: true })
-  const lf = verifyEvidenceDir(lfDir)
-  const crlf = verifyEvidenceDir(crlfDir)
-  assert.equal(lf.ok, true, JSON.stringify(lf.failures))
-  assert.equal(crlf.ok, true, JSON.stringify(crlf.failures))
-  assert.equal(JSON.stringify(lf.round1.eventOrder), JSON.stringify(crlf.round1.eventOrder))
+  withOracleTempDir('min-lf', (lfDir) => {
+    withOracleTempDir('min-crlf', (crlfDir) => {
+      writeOracleMinFixture(lfDir, { crlf: false })
+      writeOracleMinFixture(crlfDir, { crlf: true })
+      const lf = verifyEvidenceDir(lfDir)
+      const crlf = verifyEvidenceDir(crlfDir)
+      assert.equal(lf.ok, true, JSON.stringify(lf.failures))
+      assert.equal(crlf.ok, true, JSON.stringify(crlf.failures))
+      assert.equal(JSON.stringify(lf.round1.eventOrder), JSON.stringify(crlf.round1.eventOrder))
+    })
+  })
 })
 
 test('compareRuns 逐位比较 eventOrder 四元组；同多重集不同顺序必须 FAIL', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-order')
-  writeOracleMinFixture(dir)
-  const good = verifyEvidenceDir(dir)
-  assert.equal(good.ok, true, JSON.stringify(good.failures))
-  const drifted = structuredClone(good.round2)
-  const last = drifted.eventOrder[100]
-  drifted.eventOrder[100] = drifted.eventOrder[99]
-  drifted.eventOrder[99] = last
-  const cmp = compareRuns(good.round1, drifted)
-  assert.equal(cmp.ok, false)
-  assert.ok(cmp.failures.some((f) => f.check === 'event-order-compare'), JSON.stringify(cmp.failures))
+  withOracleTempDir('min-order', (dir) => {
+    writeOracleMinFixture(dir)
+    const good = verifyEvidenceDir(dir)
+    assert.equal(good.ok, true, JSON.stringify(good.failures))
+    const drifted = structuredClone(good.round2)
+    const last = drifted.eventOrder[100]
+    drifted.eventOrder[100] = drifted.eventOrder[99]
+    drifted.eventOrder[99] = last
+    const cmp = compareRuns(good.round1, drifted)
+    assert.equal(cmp.ok, false)
+    assert.ok(cmp.failures.some((f) => f.check === 'event-order-compare'), JSON.stringify(cmp.failures))
+  })
 })
 
 test('compareRuns appliedTicks 逐值比较；只比长度必须 FAIL', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-ticks')
-  writeOracleMinFixture(dir)
-  const good = verifyEvidenceDir(dir)
-  const drifted = structuredClone(good.round2)
-  assert.equal(drifted.appliedTicks.length, 101)
-  drifted.appliedTicks = drifted.appliedTicks.map((tick, i) => (i === 50 ? tick + 1 : tick))
-  const cmp = compareRuns(good.round1, drifted)
-  assert.equal(cmp.ok, false)
-  assert.ok(cmp.failures.some((f) => f.check === 'applied-tick-compare'), JSON.stringify(cmp.failures))
+  withOracleTempDir('min-ticks', (dir) => {
+    writeOracleMinFixture(dir)
+    const good = verifyEvidenceDir(dir)
+    const drifted = structuredClone(good.round2)
+    assert.equal(drifted.appliedTicks.length, 101)
+    drifted.appliedTicks = drifted.appliedTicks.map((tick, i) => (i === 50 ? tick + 1 : tick))
+    const cmp = compareRuns(good.round1, drifted)
+    assert.equal(cmp.ok, false)
+    assert.ok(cmp.failures.some((f) => f.check === 'applied-tick-compare'), JSON.stringify(cmp.failures))
+  })
 })
 
 test('committed fixture --dir 为 ok', () => {
@@ -768,14 +796,14 @@ test('committed fixture --dir 为 ok', () => {
 })
 
 test('101 窗口行来自客户端日志且 roomSequence 严格递增', () => {
-  const root = dirname(oracleFilePath())
-  const dir = join(root, '.tmp-oracle-min-window')
-  writeOracleMinFixture(dir)
-  const report = verifyRunFromLogs(join(dir, 'round-1', 'server'), join(dir, 'round-1', 'client'))
-  assert.equal(report.windowLines.length, 101)
-  for (let i = 1; i < report.windowLines.length; i++) {
-    assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
-  }
+  withOracleTempDir('min-window', (dir) => {
+    writeOracleMinFixture(dir)
+    const report = verifyRunFromLogs(join(dir, 'round-1', 'server'), join(dir, 'round-1', 'client'))
+    assert.equal(report.windowLines.length, 101)
+    for (let i = 1; i < report.windowLines.length; i++) {
+      assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
+    }
+  })
 })
 
 test('parseNdjson preserves malformed and non-object records for fail-closed verification', () => {
@@ -791,20 +819,22 @@ test('parseNdjson preserves malformed and non-object records for fail-closed ver
 })
 
 test('verifyRunFromLogs rejects malformed and non-object log records', () => {
-  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-record')
-  writeOracleMinFixture(root)
-  writeFileSync(join(root, 'round-1', 'server', 'server.ndjson'), '[]\n{"kind":"host","process":"lumio-entity-chat-replay"}\n')
-  const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed'))
+  withOracleTempDir('malformed-record', (root) => {
+    writeOracleMinFixture(root)
+    writeFileSync(join(root, 'round-1', 'server', 'server.ndjson'), '[]\n{"kind":"host","process":"lumio-entity-chat-replay"}\n')
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed'))
+  })
 })
 
 test('verifyRunFromLogs rejects non-object Runtime drain records', () => {
-  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-drain')
-  writeOracleMinFixture(root)
-  const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
-  writeFileSync(serverPath, readFileSync(serverPath, 'utf8') + '{"kind":"drain","frames":[],"queries":[null]}\n')
-  const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
-  assert.equal(report.ok, false)
-  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
+  withOracleTempDir('malformed-drain', (root) => {
+    writeOracleMinFixture(root)
+    const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
+    writeFileSync(serverPath, readFileSync(serverPath, 'utf8') + '{"kind":"drain","frames":[],"queries":[null]}\n')
+    const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
+  })
 })
