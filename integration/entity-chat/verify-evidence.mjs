@@ -247,25 +247,38 @@ function chatEventFromRpc(rpc) {
   return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
 }
 
-function chatEventsFromClient(clientEvents) {
+function directChatEventsFromClient(clientEvents) {
   const events = []
-  const records = [...(clientEvents ?? []).map((record) => record?.ev), ...runtimeDrainFrames(clientEvents)]
-  for (const ev of records) {
+  for (const record of clientEvents ?? []) {
+    const ev = record?.ev
     const kind = kindOf(ev)
-    if (kind === 'chat.event' || kind === 'event') {
-      const sender = parseSenderNetEntityId(ev)
-      if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
-      events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
-      continue
-    }
+    if (kind !== 'chat.event' && kind !== 'event') continue
+    const sender = parseSenderNetEntityId(ev)
+    if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
+    events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
+  }
+  return events
+}
+
+function runtimeRpcSequence(events) {
+  const chatEvents = []
+  let present = false
+  for (const ev of runtimeDrainFrames(events)) {
     if (ev.messageType === 'WorldChange' && Array.isArray(ev.rpcs)) {
+      present = true
       for (const rpc of ev.rpcs) {
         const parsed = chatEventFromRpc(rpc)
-        if (parsed) events.push(parsed)
+        if (parsed) chatEvents.push(parsed)
       }
     }
   }
-  return events
+  return { present, events: chatEvents }
+}
+
+function chatEventsFromRuntimeDrains(serverEvents, clientEvents) {
+  const server = runtimeRpcSequence(serverEvents)
+  if (server.present) return server
+  return runtimeRpcSequence(clientEvents)
 }
 
 function windowLinesFromClient(clientEvents) {
@@ -276,7 +289,9 @@ function windowLinesFromClient(clientEvents) {
     lines.push(ev)
   }
   if (lines.length > 0) return lines
-  return chatEventsFromClient(clientEvents)
+  const direct = directChatEventsFromClient(clientEvents)
+  if (direct.length > 0) return direct
+  return runtimeRpcSequence(clientEvents).events
 }
 
 function hasKind(events, kind) {
@@ -376,9 +391,33 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's1:wrong-password', message: 'account log must observe wrong_password' })
   }
 
-  const observed = chatEventsFromClient(clientEvents)
-  if (observed.length === 0) {
+  const directReceived = directChatEventsFromClient(clientEvents)
+  const runtimeRpc = chatEventsFromRuntimeDrains(serverEvents, clientEvents)
+  const runtimeObserved = runtimeRpc.events
+  const observed = runtimeRpc.present ? runtimeObserved : directReceived
+  if (runtimeObserved.length === 0 && directReceived.length === 0) {
     failures.push({ check: 's3:chat-event', message: 'client logs must contain received chat.event' })
+  }
+
+  for (let i = 1; i < runtimeObserved.length; i++) {
+    if (runtimeObserved[i].roomSequence <= runtimeObserved[i - 1].roomSequence) {
+      failures.push({
+        check: 's6:rpc-roomSequence',
+        message: 'Runtime drain WorldChange.rpcs must have strictly increasing roomSequence',
+      })
+      break
+    }
+  }
+
+  if (runtimeObserved.length > 0 && directReceived.length > 0) {
+    const runtimeOrder = runtimeObserved.map((ev) => eventOrderKey(ev))
+    const receivedOrder = directReceived.map((ev) => eventOrderKey(ev))
+    if (JSON.stringify(runtimeOrder) !== JSON.stringify(receivedOrder)) {
+      failures.push({
+        check: 's6:rpc-event-order',
+        message: 'Runtime drain WorldChange.rpcs must exactly match received event identity and order',
+      })
+    }
   }
 
   const runtimeQueries = runtimeDrainQueries(serverEvents).concat(runtimeDrainQueries(clientEvents))
@@ -470,7 +509,7 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   if (observed.length !== 101) {
     failures.push({
       check: 's11:synthesized',
-      message: 'eventOrder/appliedTicks must come from client-received chat.event, not send counts',
+      message: 'eventOrder/appliedTicks must contain exactly 101 events from the authoritative observed source',
     })
   }
 
@@ -539,6 +578,7 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
   const instanceId = 0x1000000000000001n
   const admits = []
   const events = []
+  const rpcs = []
   const windows = []
   for (let i = 1; i <= 101; i++) {
     const hex = senderHex(instanceId, i)
@@ -563,6 +603,15 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
       text: `hello-${i}`,
       appliedTick: 1,
     })
+    rpcs.push({
+      componentId: 'ChatComponent',
+      method: 'OnChatMessage',
+      sender: hex,
+      messageId: i,
+      roomSequence: i,
+      appliedTick: 1,
+      args: [Buffer.from(`hello-${i}`, 'utf8').toString('hex')],
+    })
     windows.push({
       kind: 'chat.window',
       phase: 'live',
@@ -578,7 +627,7 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
     { kind: 'account', wrongPasswordCode: 'wrong_password' },
     {
       kind: 'drain',
-      frames: [],
+      frames: [{ messageType: 'WorldChange', rpcs }],
       queries: [
         { type: 'AttributeQueryResult', requestId: 'query-unauthorized', outcome: 'unauthorized' },
         { type: 'AttributeQueryResult', requestId: 'query-invisible', outcome: 'invisible' },
@@ -836,5 +885,104 @@ test('verifyRunFromLogs rejects non-object Runtime drain records', () => {
     const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
     assert.equal(report.ok, false)
     assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
+  })
+})
+
+function appendClientRuntimeRpcDrain(root, round, mutate = (rpcs) => rpcs) {
+  const clientPath = join(root, round, 'client', 'client.ndjson')
+  const received = parseNdjson(readFileSync(clientPath, 'utf8'))
+    .map((record) => record.ev)
+    .filter((ev) => kindOf(ev) === 'chat.event')
+  const rpcs = received.map((ev) => ({
+    componentId: 'ChatComponent',
+    method: 'OnChatMessage',
+    sender: ev.senderNetEntityId,
+    messageId: ev.messageId,
+    roomSequence: ev.roomSequence,
+    appliedTick: ev.appliedTick,
+    args: [Buffer.from(ev.text, 'utf8').toString('hex')],
+  }))
+  const drain = {
+    kind: 'drain',
+    frames: [{ messageType: 'WorldChange', rpcs: mutate(rpcs) }],
+    queries: [],
+  }
+  writeFileSync(clientPath, readFileSync(clientPath, 'utf8') + JSON.stringify(drain) + '\n')
+}
+
+function mutateServerRuntimeRpcDrain(root, round, mutate) {
+  const serverPath = join(root, round, 'server', 'server.ndjson')
+  const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+  const drain = rows.find((ev) => kindOf(ev) === 'drain')
+  const frame = drain.frames.find((candidate) => candidate.messageType === 'WorldChange')
+  frame.rpcs = mutate(frame.rpcs)
+  writeFileSync(serverPath, ndjson(rows))
+}
+
+function clearServerRuntimeFrames(root, round) {
+  const serverPath = join(root, round, 'server', 'server.ndjson')
+  const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+  const drain = rows.find((ev) => kindOf(ev) === 'drain')
+  drain.frames = []
+  writeFileSync(serverPath, ndjson(rows))
+}
+
+test('Runtime drain WorldChange.rpcs are authoritative without double counting direct chat events', () => {
+  withOracleTempDir('rpc-authority', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      clearServerRuntimeFrames(root, round)
+      appendClientRuntimeRpcDrain(root, round)
+    }
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, true, JSON.stringify(report.failures))
+    assert.equal(report.round1.eventOrder.length, 101)
+    assert.equal(report.round1.appliedTicks.length, 101)
+  })
+})
+
+test('an observed Runtime WorldChange.rpcs sequence cannot fall back to direct chat events', () => {
+  withOracleTempDir('rpc-empty', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', () => [])
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's11:synthesized'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime drain WorldChange.rpcs require strictly increasing roomSequence', () => {
+  withOracleTempDir('rpc-sequence', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      mutateServerRuntimeRpcDrain(root, round, (rpcs) => {
+        const swapped = [...rpcs]
+        const earlier = swapped[49]
+        swapped[49] = swapped[50]
+        swapped[50] = earlier
+        return swapped
+      })
+    }
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-roomSequence'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime drain WorldChange.rpcs must exactly match received event identity and order', () => {
+  withOracleTempDir('rpc-identity', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      mutateServerRuntimeRpcDrain(root, round, (rpcs) => {
+        const changed = structuredClone(rpcs)
+        const earlierSender = changed[49].sender
+        changed[49].sender = changed[50].sender
+        changed[50].sender = earlierSender
+        return changed
+      })
+    }
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-event-order'), JSON.stringify(report.failures))
   })
 })
