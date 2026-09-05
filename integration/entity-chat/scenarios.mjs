@@ -202,14 +202,20 @@ export async function runPlaywrightBrowser({
       receivedChatEvent: (window.__lumioChat?.window?.lines?.length ?? 0) > 0,
     })).catch(() => null)
     const windowLines = Array.isArray(result?.windowLines) ? result.windowLines : []
-    return { ran: true, injected: false, receivedFromNetwork: networkFrames.length > 0, receivedChatEvent: windowLines.length > 0 || result?.receivedChatEvent === true, windowLines, receivedEvents: windowLines, networkFrames, browser: 'chromium', channel, error: firstLine(err), result }
+    const observedFrames = networkFrames.length > 0
+      ? networkFrames
+      : (Array.isArray(result?.networkFrames) ? result.networkFrames : [])
+    return { ran: true, injected: false, receivedFromNetwork: observedFrames.length > 0, receivedChatEvent: windowLines.length > 0 || result?.receivedChatEvent === true, windowLines, receivedEvents: windowLines, networkFrames: observedFrames, browser: 'chromium', channel, error: firstLine(err), result }
   } finally {
     try { await context.close() } catch { /* ignore */ }
     try { await browser.close() } catch { /* ignore */ }
   }
   if (resultPath) writeFileSync(resultPath, JSON.stringify(result, null, 2) + '\n')
   const windowLines = Array.isArray(result?.windowLines) ? result.windowLines : []
-  return { ran: true, injected: false, receivedFromNetwork: networkFrames.length > 0, receivedChatEvent: windowLines.length > 0 || result?.receivedChatEvent === true, windowLines, receivedEvents: windowLines, networkFrames, connectionSuperseded: result?.connectionSuperseded === true, browser: 'chromium', channel, result }
+  const observedFrames = networkFrames.length > 0
+    ? networkFrames
+    : (Array.isArray(result?.networkFrames) ? result.networkFrames : [])
+  return { ran: true, injected: false, receivedFromNetwork: observedFrames.length > 0, receivedChatEvent: windowLines.length > 0 || result?.receivedChatEvent === true, windowLines, receivedEvents: windowLines, networkFrames: observedFrames, connectionSuperseded: result?.connectionSuperseded === true, browser: 'chromium', channel, result }
 }
 
 const test = process.env.NODE_TEST_CONTEXT ? nodeTest : () => {}

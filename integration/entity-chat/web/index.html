@@ -50,12 +50,16 @@
       account: null,
       room: null,
       received: [],
+      networkFrames: [],
       receivedChatEvent: false,
       connectionSuperseded: false,
       errors: [],
     };
 
     function recordFrame(parsed, raw) {
+      if (parsed && parsed.messageType === "WorldChange" && Array.isArray(parsed.rpcs)) {
+        result.networkFrames.push(parsed);
+      }
       if (parsed && parsed.messageType === "ConnectionSuperseded") {
         result.connectionSuperseded = true;
         return;

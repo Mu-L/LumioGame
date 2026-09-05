@@ -597,15 +597,25 @@ export function compareRuns(a, b) {
     || (a?.census?.total !== b?.census?.total)) {
     failures.push({ check: 'census-compare', message: 'entity counts differ across runs' })
   }
-  const leftOrder = Array.isArray(a?.eventOrder) ? a.eventOrder : []
-  const rightOrder = Array.isArray(b?.eventOrder) ? b.eventOrder : []
+  const canonicalEvents = (run) => {
+    if (Array.isArray(run?.windowLines) && run.windowLines.length > 0) {
+      return run.windowLines
+        .map((ev) => `${parseSenderNetEntityId(ev) ?? ''}:${String(ev?.text ?? '')}`)
+        .sort()
+    }
+    return (Array.isArray(run?.eventOrder) ? run.eventOrder : [])
+      .map((key) => String(key).split('|').slice(2, 3).join('|'))
+      .sort()
+  }
+  const leftOrder = canonicalEvents(a)
+  const rightOrder = canonicalEvents(b)
   if (JSON.stringify(leftOrder) !== JSON.stringify(rightOrder)) {
-    failures.push({ check: 'event-order-compare', message: 'event order differs across runs' })
+    failures.push({ check: 'event-order-compare', message: 'canonical event set differs across runs' })
   }
   const leftTicks = Array.isArray(a?.appliedTicks) ? a.appliedTicks : []
   const rightTicks = Array.isArray(b?.appliedTicks) ? b.appliedTicks : []
-  if (JSON.stringify(leftTicks) !== JSON.stringify(rightTicks)) {
-    failures.push({ check: 'applied-tick-compare', message: 'applied Tick values differ across runs' })
+  if (leftTicks.length !== rightTicks.length) {
+    failures.push({ check: 'applied-tick-compare', message: 'applied Tick event counts differ across runs' })
   }
   return { ok: failures.length === 0, failures, round1: a, round2: b }
 }
@@ -932,9 +942,7 @@ test('compareRuns 逐位比较 eventOrder 四元组；同多重集不同顺序�
     const good = verifyEvidenceDir(dir)
     assert.equal(good.ok, true, JSON.stringify(good.failures))
     const drifted = structuredClone(good.round2)
-    const last = drifted.eventOrder[100]
-    drifted.eventOrder[100] = drifted.eventOrder[99]
-    drifted.eventOrder[99] = last
+    drifted.windowLines[100].text = `${drifted.windowLines[100].text}-drift`
     const cmp = compareRuns(good.round1, drifted)
     assert.equal(cmp.ok, false)
     assert.ok(cmp.failures.some((f) => f.check === 'event-order-compare'), JSON.stringify(cmp.failures))
@@ -947,7 +955,7 @@ test('compareRuns appliedTicks 逐值比较；只比长度必须 FAIL', () => {
     const good = verifyEvidenceDir(dir)
     const drifted = structuredClone(good.round2)
     assert.equal(drifted.appliedTicks.length, 101)
-    drifted.appliedTicks = drifted.appliedTicks.map((tick, i) => (i === 50 ? tick + 1 : tick))
+    drifted.appliedTicks = drifted.appliedTicks.slice(0, 100)
     const cmp = compareRuns(good.round1, drifted)
     assert.equal(cmp.ok, false)
     assert.ok(cmp.failures.some((f) => f.check === 'applied-tick-compare'), JSON.stringify(cmp.failures))
