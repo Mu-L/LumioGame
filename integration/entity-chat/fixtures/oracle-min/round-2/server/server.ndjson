@@ -1,8 +1,6 @@
 {"kind":"host","process":"lumio-entity-chat-replay","pid":4242}
 {"kind":"account","wrongPasswordCode":"wrong_password"}
-{"kind":"query","outcome":"unauthorized"}
-{"kind":"query","outcome":"invisible"}
-{"kind":"query","outcome":"stale"}
+{"kind":"drain","frames":[],"queries":[{"type":"AttributeQueryResult","requestId":"query-unauthorized","outcome":"unauthorized"},{"type":"AttributeQueryResult","requestId":"query-invisible","outcome":"invisible"},{"type":"AttributeQueryResult","requestId":"query-stale","outcome":"stale_generation"}]}
 {"kind":"snapshot","historyCount":0,"windowBefore":101,"processA":11,"snapshotSha256":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"}
 {"kind":"restore","windowAfter":0,"lastMessageTextEqual":true,"processB":12}
 {"kind":"superseded","netEntityId":"10000000000000010000000000000064","reason":"account_already_online"}

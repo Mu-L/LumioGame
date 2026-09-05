@@ -41,6 +41,7 @@ public sealed class InputCommandEnvelopeTests
         ChatOperationResult admitted = ChatSetMessageSystem.AdmitEnvelope(
             manager,
             "room-01",
+            ChatWorldHarness.Net(manager, 0),
             "C1",
             1UL,
             InputCommandEnvelope.FromChatText("hello-Bot01"));
@@ -62,7 +63,7 @@ public sealed class InputCommandEnvelopeTests
             valid.MessageType,
             new[] { new CommandBlock(block.MappingId, block.Payload, string.Concat("ab", block.PayloadSha256.AsSpan(2))) });
 
-        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", "C1", 1UL, tampered);
+        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", sender, "C1", 1UL, tampered);
         Assert.Equal(ChatOperationKind.Rejected, rejected.Kind);
         Assert.Equal(ChatErrorCodes.BadPayloadHash, rejected.ErrorCode);
         manager.Tick();
@@ -81,7 +82,7 @@ public sealed class InputCommandEnvelopeTests
             valid.MessageType,
             new[] { new CommandBlock("chat.not-a-command", block.Payload, block.PayloadSha256) });
 
-        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", "C1", 1UL, unknown);
+        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", ChatWorldHarness.Net(manager, 0), "C1", 1UL, unknown);
         Assert.Equal(ChatOperationKind.Rejected, rejected.Kind);
         Assert.Equal(ChatErrorCodes.UnknownCommandType, rejected.ErrorCode);
     }
@@ -93,7 +94,7 @@ public sealed class InputCommandEnvelopeTests
         InputCommandEnvelope valid = InputCommandEnvelope.FromChatText("gg");
         var wrong = new InputCommandEnvelope("Delta", valid.Commands);
 
-        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", "C1", 1UL, wrong);
+        ChatOperationResult rejected = ChatSetMessageSystem.AdmitEnvelope(manager, "room-01", ChatWorldHarness.Net(manager, 0), "C1", 1UL, wrong);
         Assert.Equal(ChatOperationKind.Rejected, rejected.Kind);
         Assert.Equal(ChatErrorCodes.BadEnvelope, rejected.ErrorCode);
     }

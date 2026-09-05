@@ -155,15 +155,54 @@ function entityTypeOf(ev) {
   return null
 }
 
+function isRuntimeDrain(ev) {
+  const kind = kindOf(ev)
+  return kind === 'drain' || kind === 'runtime.drain' || kind === 'drain.outbox'
+    || ev?.messageType === 'DrainOutbox'
+}
+
+/** Returns only owner-thread Runtime results carried by drain.queries. */
+export function runtimeDrainQueries(events) {
+  const queries = []
+  for (const { ev } of events ?? []) {
+    if (!isRuntimeDrain(ev) || !Array.isArray(ev.queries)) continue
+    for (const query of ev.queries) {
+      if (isObject(query)) queries.push(query)
+    }
+  }
+  return queries
+}
+
+function runtimeDrainFrames(events) {
+  const frames = []
+  for (const { ev } of events ?? []) {
+    if (!isRuntimeDrain(ev) || !Array.isArray(ev.frames)) continue
+    for (const frame of ev.frames) {
+      if (isObject(frame)) frames.push(frame)
+    }
+  }
+  return frames
+}
+
+function serverRecordsWithRuntimeFrames(serverEvents) {
+  return [...(serverEvents ?? []).map(({ ev }) => ev), ...runtimeDrainFrames(serverEvents)]
+}
+
 export function censusFromServerLogs(serverEvents) {
   const byId = new Map()
-  for (const { ev } of serverEvents) {
+  for (const ev of serverRecordsWithRuntimeFrames(serverEvents)) {
     const kind = kindOf(ev)
-    if (kind !== 'entity_admitted' && kind !== 'admit') continue
-    const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
-    const type = entityTypeOf(ev)
-    if (id == null || type == null) continue
-    byId.set(id, type)
+    if (kind === 'entity_admitted' || kind === 'admit') {
+      const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
+      const type = entityTypeOf(ev)
+      if (id != null && type != null) byId.set(id, type)
+    }
+    if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
+    for (const create of ev.creates) {
+      const id = parseSenderNetEntityId(create) ?? parseSenderNetEntityId(create?.netEntityId)
+      const type = entityTypeOf(create)
+      if (id != null && type != null) byId.set(id, type)
+    }
   }
   let botCount = 0
   let playerCount = 0
@@ -174,21 +213,38 @@ export function censusFromServerLogs(serverEvents) {
   return { botCount, playerCount, total: byId.size, netEntityIds: [...byId.keys()] }
 }
 
+function decodeHexText(value) {
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value)) return null
+  const bytes = Buffer.from(value, 'hex')
+  try { return new TextDecoder().decode(bytes) } catch { return null }
+}
+
+function chatEventFromRpc(rpc) {
+  if (!isObject(rpc) || rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
+  const sender = parseSenderNetEntityId(rpc.sender)
+  if (sender == null || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
+  const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
+  const text = decodeHexText(encoded) ?? (typeof rpc.text === 'string' ? rpc.text : '')
+  return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
+}
+
 function chatEventsFromClient(clientEvents) {
   const events = []
-  for (const { ev } of clientEvents) {
+  const records = [...(clientEvents ?? []).map(({ ev }) => ev), ...runtimeDrainFrames(clientEvents)]
+  for (const ev of records) {
     const kind = kindOf(ev)
-    if (kind !== 'chat.event' && kind !== 'event') continue
-    const sender = parseSenderNetEntityId(ev)
-    if (sender == null) continue
-    if (typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
-    events.push({
-      messageId: ev.messageId,
-      roomSequence: ev.roomSequence,
-      senderNetEntityId: sender,
-      appliedTick: ev.appliedTick,
-      text: typeof ev.text === 'string' ? ev.text : '',
-    })
+    if (kind === 'chat.event' || kind === 'event') {
+      const sender = parseSenderNetEntityId(ev)
+      if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
+      events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
+      continue
+    }
+    if (ev.messageType === 'WorldChange' && Array.isArray(ev.rpcs)) {
+      for (const rpc of ev.rpcs) {
+        const parsed = chatEventFromRpc(rpc)
+        if (parsed) events.push(parsed)
+      }
+    }
   }
   return events
 }
@@ -266,11 +322,15 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's3:chat-event', message: 'client logs must contain received chat.event' })
   }
 
-  const queryBlob = blobOf(serverEvents) + '\n' + blobOf(clientEvents)
+  const runtimeQueries = runtimeDrainQueries(serverEvents).concat(runtimeDrainQueries(clientEvents))
+  const queryBlob = blobOf(runtimeQueries.map((ev) => ({ ev })))
   for (const needed of ['unauthorized', 'invisible', 'stale']) {
     if (!queryBlob.includes(needed)) {
       failures.push({ check: 's5:missing', message: `logs missing query outcome ${needed}` })
     }
+  }
+  if (runtimeQueries.length === 0) {
+    failures.push({ check: 's5:drain-queries', message: 'Runtime query outcomes must come from drain.queries' })
   }
 
   const tick = findKind(clientEvents, 'tick') ?? findKind(serverEvents, 'tick')
@@ -457,9 +517,15 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
   const extraServer = [
     { kind: 'host', process: 'lumio-entity-chat-replay', pid: 4242 },
     { kind: 'account', wrongPasswordCode: 'wrong_password' },
-    { kind: 'query', outcome: 'unauthorized' },
-    { kind: 'query', outcome: 'invisible' },
-    { kind: 'query', outcome: 'stale' },
+    {
+      kind: 'drain',
+      frames: [],
+      queries: [
+        { type: 'AttributeQueryResult', requestId: 'query-unauthorized', outcome: 'unauthorized' },
+        { type: 'AttributeQueryResult', requestId: 'query-invisible', outcome: 'invisible' },
+        { type: 'AttributeQueryResult', requestId: 'query-stale', outcome: 'stale_generation' },
+      ],
+    },
     {
       kind: 'snapshot',
       historyCount: 0,
@@ -590,6 +656,15 @@ test('harness evidence.json / timer-trace.json 不是输入', () => {
   const report = verifyEvidenceDir(dir)
   assert.equal(report.ok, false)
   assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
+})
+
+test('drain.queries are the only accepted Runtime query result source', () => {
+  const records = [
+    { ev: { kind: 'query', outcome: 'unauthorized' } },
+    { ev: { kind: 'drain', frames: [], queries: [{ type: 'AttributeQueryResult', requestId: 'q1', outcome: 'unauthorized' }] } },
+  ]
+  const queries = runtimeDrainQueries(records)
+  assert.deepEqual(queries, [{ type: 'AttributeQueryResult', requestId: 'q1', outcome: 'unauthorized' }])
 })
 
 test('fixture --dir 在 LF 与 CRLF 下均为 ok', () => {

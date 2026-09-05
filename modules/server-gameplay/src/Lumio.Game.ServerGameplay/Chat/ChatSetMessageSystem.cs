@@ -20,6 +20,7 @@ public static class ChatSetMessageSystem
     public static ChatOperationResult AdmitEnvelope(
         WorldManager manager,
         string roomId,
+        NetEntityId sender,
         string connectionId,
         ulong connectionGeneration,
         InputCommandEnvelope envelope)
@@ -29,7 +30,7 @@ public static class ChatSetMessageSystem
             return ChatOperationResult.Rejected(errorCode);
         }
 
-        return Admit(manager, roomId, connectionId, connectionGeneration, new ChatInput(text));
+        return Admit(manager, roomId, sender, connectionId, connectionGeneration, new ChatInput(text));
     }
 
     /// <summary>
@@ -38,6 +39,7 @@ public static class ChatSetMessageSystem
     public static ChatOperationResult Admit(
         WorldManager manager,
         string roomId,
+        NetEntityId sender,
         string connectionId,
         ulong connectionGeneration,
         ChatInput input)
@@ -57,11 +59,6 @@ public static class ChatSetMessageSystem
         if (Encoding.UTF8.GetByteCount(input.Text) > ChatMapping.MaxTextUtf8Bytes)
         {
             return ChatOperationResult.Rejected(ChatErrorCodes.ChatTextTooLong);
-        }
-
-        if (!manager.TryGetSession(connectionId, out NetEntityId sender))
-        {
-            return ChatOperationResult.Rejected("binding_not_found");
         }
 
         manager.Enqueue(new InputCommandMessage(ChatMapping.InputMappingId, sender, EncodeUtf8Prefixed(input.Text), connectionId));
