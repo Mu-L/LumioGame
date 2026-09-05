@@ -250,12 +250,18 @@ function decodeHexText(value) {
   try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { return null }
 }
 
+function isCanonicalC1Counter(value) {
+  return Number.isSafeInteger(value) && value >= 0
+}
+
 function chatEventFromRpc(rpc) {
   if (!isObject(rpc) || rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
   const target = typeof rpc.target === 'string' ? parseSenderNetEntityId(rpc.target) : null
   const sender = typeof rpc.sender === 'string' ? parseSenderNetEntityId(rpc.sender) : null
   if (target == null || sender == null || rpc.scope !== 'room'
-    || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
+    || !isCanonicalC1Counter(rpc.messageId)
+    || !isCanonicalC1Counter(rpc.roomSequence)
+    || !isCanonicalC1Counter(rpc.appliedTick)) return null
   const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
   const text = decodeHexText(encoded)
   if (text == null) return null
@@ -1197,6 +1203,60 @@ test('Runtime drain WorldChange.rpcs require strictly increasing roomSequence', 
         return swapped
       })
     }
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-roomSequence'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime RPC C-1 counters reject non-canonical numeric mutations', () => {
+  const mutations = [
+    ['messageId', -1],
+    ['roomSequence', 1.5],
+    ['appliedTick', Number.MAX_SAFE_INTEGER + 1],
+  ]
+  for (const [field, value] of mutations) {
+    withOracleTempDir(`rpc-counter-${field}`, (root) => {
+      writeOracleMinFixture(root)
+      mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+        const changed = structuredClone(rpcs)
+        changed[0][field] = value
+        return changed
+      })
+      const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+      assert.equal(report.ok, false)
+      assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+    })
+  }
+})
+
+test('Runtime RPC C-1 counters reject NaN and Infinity', () => {
+  const base = {
+    target: senderHex(1n, 1n),
+    componentId: 'ChatComponent',
+    method: 'OnChatMessage',
+    sender: senderHex(1n, 1n),
+    messageId: 1,
+    roomSequence: 1,
+    appliedTick: 1,
+    scope: 'room',
+    args: [Buffer.from('hello', 'utf8').toString('hex')],
+  }
+  for (const field of ['messageId', 'roomSequence', 'appliedTick']) {
+    for (const value of [Number.NaN, Number.POSITIVE_INFINITY]) {
+      assert.equal(chatEventFromRpc({ ...base, [field]: value }), null, `${field}=${value}`)
+    }
+  }
+})
+
+test('Runtime RPC C-1 roomSequence rejects duplicate mutations', () => {
+  withOracleTempDir('rpc-sequence-duplicate', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[1].roomSequence = changed[0].roomSequence
+      return changed
+    })
     const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
     assert.equal(report.ok, false)
     assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-roomSequence'), JSON.stringify(report.failures))
