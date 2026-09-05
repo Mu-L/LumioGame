@@ -79,12 +79,11 @@ function u64ToHex16(value) {
   return n.toString(16).padStart(16, '0')
 }
 
-/** 32-hex sender. Accepts 32-hex or two u64 halves. Does not use a u128 type. */
+/** C-1 canonical NetEntityId: exactly 32 lowercase hex characters. */
 export function parseSenderNetEntityId(rec) {
   if (rec == null) return null
   if (typeof rec === 'string') {
-    const s = rec.toLowerCase()
-    if (/^[0-9a-f]{32}$/.test(s) && !/^0+$/.test(s)) return s
+    if (/^[0-9a-f]{32}$/.test(rec) && !/^0+$/.test(rec)) return rec
     return null
   }
   if (!isObject(rec)) return null
@@ -96,14 +95,7 @@ export function parseSenderNetEntityId(rec) {
     const parsed = parseSenderNetEntityId(rec.netEntityId)
     if (parsed) return parsed
   }
-  const instance = rec.senderNetEntityIdInstanceId ?? rec.instanceId ?? rec.netEntityIdInstanceId
-  const counter = rec.senderNetEntityIdCounter ?? rec.counter ?? rec.netEntityIdCounter
-  if (instance == null || counter == null) return null
-  const hi = u64ToHex16(instance)
-  const lo = u64ToHex16(counter)
-  if (!hi || !lo) return null
-  const hex = hi + lo
-  return /^0+$/.test(hex) ? null : hex
+  return null
 }
 
 export function isHostNetEntityId(id) {
@@ -118,7 +110,7 @@ export function isHostNetEntityId(id) {
 export function eventOrderKey(tuple) {
   if (typeof tuple === 'string') return tuple
   if (!isObject(tuple)) return String(tuple)
-  const sender = parseSenderNetEntityId(tuple) ?? String(tuple.senderNetEntityId ?? '')
+  const sender = parseSenderNetEntityId(tuple) ?? ''
   return [tuple.messageId, tuple.roomSequence, sender, tuple.appliedTick].join('|')
 }
 
@@ -165,10 +157,30 @@ function kindOf(ev) {
 }
 
 function entityTypeOf(ev) {
-  const t = ev.entityType ?? ev.entityKind
-  if (t === 'bot' || t === 'Bot' || t === 'BotEntity') return 'bot'
-  if (t === 'player' || t === 'Player' || t === 'PlayerEntity') return 'player'
-  return null
+  const t = ev?.entityType
+  return t === 'world' || t === 'player' || t === 'bot' ? t : null
+}
+
+function entityRecordFailures(serverEvents) {
+  const failures = []
+  const checkRecord = (record, label) => {
+    if (typeof record?.netEntityId !== 'string' || parseSenderNetEntityId(record.netEntityId) == null) {
+      failures.push({ check: 'census:id', message: `${label} netEntityId must be a lowercase canonical 32-hex string` })
+    }
+    if (entityTypeOf(record) == null) {
+      failures.push({ check: 'census:entity-type', message: `${label} entityType must be exactly world, player, or bot` })
+    }
+  }
+  for (const ev of serverRecordsWithRuntimeFrames(serverEvents)) {
+    if (!isObject(ev)) continue
+    const kind = kindOf(ev)
+    if (kind === 'entity_admitted' || (kind === 'admit' && (ev.netEntityId != null || ev.entityType != null))) {
+      checkRecord(ev, `server ${kind}`)
+    }
+    if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
+    for (const create of ev.creates) checkRecord(create, 'WorldChange create')
+  }
+  return failures
 }
 
 function isRuntimeDrain(ev) {
@@ -235,17 +247,19 @@ export function censusFromServerLogs(serverEvents) {
 function decodeHexText(value) {
   if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/.test(value)) return null
   const bytes = Buffer.from(value, 'hex')
-  try { return new TextDecoder().decode(bytes) } catch { return null }
+  try { return new TextDecoder('utf-8', { fatal: true }).decode(bytes) } catch { return null }
 }
 
 function chatEventFromRpc(rpc) {
   if (!isObject(rpc) || rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
-  const sender = parseSenderNetEntityId(rpc.sender)
-  if (sender == null || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
+  const target = typeof rpc.target === 'string' ? parseSenderNetEntityId(rpc.target) : null
+  const sender = typeof rpc.sender === 'string' ? parseSenderNetEntityId(rpc.sender) : null
+  if (target == null || sender == null || rpc.scope !== 'room'
+    || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
   const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
   const text = decodeHexText(encoded)
   if (text == null) return null
-  return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
+  return { targetNetEntityId: target, scope: rpc.scope, messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
 }
 
 function runtimeRpcSequence(events) {
@@ -278,8 +292,7 @@ function windowLinesFromClient(clientEvents) {
     if (ev.phase === 'restored') continue
     lines.push(ev)
   }
-  if (lines.length > 0) return lines
-  return runtimeRpcSequence(clientEvents).events
+  return lines
 }
 
 function hasKind(events, kind) {
@@ -358,6 +371,7 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   }
 
   const census = censusFromServerLogs(serverEvents)
+  failures.push(...entityRecordFailures(serverEvents))
   if (census.botCount !== 100) {
     failures.push({ check: 'census:bots', message: `BotEntity 计数 ${census.botCount},应为 100` })
   }
@@ -400,13 +414,13 @@ export function verifyRunFromLogs(serverDir, clientDir) {
   }
 
   const windowLines = windowLinesFromClient(clientEvents)
-  if (runtimeObserved.length > 0 && windowLines.length > 0) {
-    const runtimeOrder = runtimeObserved.map((ev) => eventOrderKey(ev))
-    const windowOrder = windowLines.map((ev) => eventOrderKey(ev))
-    if (JSON.stringify(runtimeOrder) !== JSON.stringify(windowOrder)) {
+  if (runtimeObserved.length > 0) {
+    const runtimeOrder = runtimeObserved.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    const windowOrder = windowLines.map((ev) => ({ key: eventOrderKey(ev), text: ev.text }))
+    if (runtimeObserved.length !== windowLines.length || JSON.stringify(runtimeOrder) !== JSON.stringify(windowOrder)) {
       failures.push({
         check: 's6:rpc-event-order',
-        message: 'Runtime drain WorldChange.rpcs must exactly match client window event identity and order',
+        message: 'Runtime drain WorldChange.rpcs must exactly match client window event identity, decoded text, and order',
       })
     }
   }
@@ -594,12 +608,14 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
       appliedTick: 1,
     })
     rpcs.push({
+      target: hex,
       componentId: 'ChatComponent',
       method: 'OnChatMessage',
       sender: hex,
       messageId: i,
       roomSequence: i,
       appliedTick: 1,
+      scope: 'room',
       args: [Buffer.from(`hello-${i}`, 'utf8').toString('hex')],
     })
     windows.push({
@@ -733,11 +749,11 @@ test('oracle test temp directories are unique and cleaned up', () => {
   assert.equal(existsSync(second), false)
 })
 
-test('parseSenderNetEntityId: 32-hex equals two u64 halves', () => {
+test('parseSenderNetEntityId accepts only the canonical 32-hex string', () => {
   const hex = senderHex(0n, 101n)
   assert.equal(hex, '00000000000000000000000000000065')
   assert.equal(parseSenderNetEntityId(hex), hex)
-  assert.equal(parseSenderNetEntityId({ senderNetEntityIdInstanceId: 0, senderNetEntityIdCounter: 101 }), hex)
+  assert.equal(parseSenderNetEntityId({ senderNetEntityIdInstanceId: 0, senderNetEntityIdCounter: 101 }), null)
   assert.equal(isHostNetEntityId('101'), false)
   assert.equal(isLauncherLoopIndex('101'), true)
   assert.equal(isHostNetEntityId(hex), true)
@@ -752,8 +768,14 @@ test('parseSenderNetEntityId: Runtime instanceId 0x1000000000000001 keeps low bi
       senderNetEntityIdInstanceId: 0x1000000000000001n,
       senderNetEntityIdCounter: 0x10n,
     }),
-    hex,
+    null,
   )
+})
+
+test('parseSenderNetEntityId rejects uppercase canonical IDs instead of normalizing them', () => {
+  const uppercase = 'ABCDEFABCDEFABCDEFABCDEFABCDEFAB'
+  assert.equal(parseSenderNetEntityId(uppercase), null)
+  assert.equal(isHostNetEntityId(uppercase), false)
 })
 
 test('空日志目录必须 FAIL', () => {
@@ -845,6 +867,19 @@ test('101 窗口行来自客户端日志且 roomSequence 严格递增', () => {
   })
 })
 
+test('verifyRunFromLogs rejects BotEntity and PlayerEntity wire aliases', () => {
+  withOracleTempDir('entity-type-alias', (root) => {
+    writeOracleMinFixture(root)
+    const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
+    const rows = parseNdjson(readFileSync(serverPath, 'utf8')).map((record) => record.ev)
+    rows.find((ev) => kindOf(ev) === 'entity_admitted').entityType = 'BotEntity'
+    writeFileSync(serverPath, ndjson(rows))
+    const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 'census:bots'), JSON.stringify(report.failures))
+  })
+})
+
 test('parseNdjson preserves malformed and non-object records for fail-closed verification', () => {
   const records = parseNdjson('{"kind":"ok"}\n[]\nnot-json\n')
   assert.equal(records.length, 3)
@@ -884,12 +919,14 @@ function appendClientRuntimeRpcDrain(root, round, mutate = (rpcs) => rpcs) {
     .map((record) => record.ev)
     .filter((ev) => kindOf(ev) === 'chat.window' && ev.phase === 'live')
   const rpcs = received.map((ev) => ({
+    target: ev.senderNetEntityId,
     componentId: 'ChatComponent',
     method: 'OnChatMessage',
     sender: ev.senderNetEntityId,
     messageId: ev.messageId,
     roomSequence: ev.roomSequence,
     appliedTick: ev.appliedTick,
+    scope: 'room',
     args: [Buffer.from(ev.text, 'utf8').toString('hex')],
   }))
   const drain = {
@@ -985,6 +1022,62 @@ test('Runtime OnChatMessage evidence requires lowercase hex args', () => {
   })
 })
 
+test('Runtime OnChatMessage evidence rejects invalid UTF-8 instead of replacement text', () => {
+  withOracleTempDir('rpc-invalid-utf8', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = 'c3'
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires the formal target field', () => {
+  withOracleTempDir('rpc-missing-target', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      delete changed[0].target
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime OnChatMessage evidence requires the formal scope field', () => {
+  withOracleTempDir('rpc-missing-scope', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      delete changed[0].scope
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's3:runtime-rpc-format'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime decoded RPC text must match the corresponding client window event', () => {
+  withOracleTempDir('rpc-window-text', (root) => {
+    writeOracleMinFixture(root)
+    mutateServerRuntimeRpcDrain(root, 'round-1', (rpcs) => {
+      const changed = structuredClone(rpcs)
+      changed[0].args[0] = Buffer.from('tampered', 'utf8').toString('hex')
+      return changed
+    })
+    const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+    assert.equal(report.ok, false)
+    assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-event-order'), JSON.stringify(report.failures))
+  })
+})
+
 test('client chat.event records cannot replace Runtime WorldChange.rpcs evidence', () => {
   withOracleTempDir('rpc-required', (root) => {
     writeOracleMinFixture(root)
@@ -1028,5 +1121,23 @@ test('Runtime drain WorldChange.rpcs must exactly match received event identity 
     const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
     assert.equal(report.ok, false)
     assert.ok(report.failures.some((failure) => failure.check === 's6:rpc-event-order'), JSON.stringify(report.failures))
+  })
+})
+
+test('Runtime RPC evidence cannot replace missing client window events', () => {
+  withOracleTempDir('rpc-window-required', (root) => {
+    writeOracleMinFixture(root)
+    for (const round of ['round-1', 'round-2']) {
+      clearServerRuntimeFrames(root, round)
+      appendClientRuntimeRpcDrain(root, round)
+      const clientPath = join(root, round, 'client', 'client.ndjson')
+      const rows = parseNdjson(readFileSync(clientPath, 'utf8'))
+        .map((record) => record.ev)
+        .filter((ev) => kindOf(ev) !== 'chat.window')
+      writeFileSync(clientPath, ndjson(rows))
+    }
+    const report = verifyEvidenceDir(root)
+    assert.equal(report.ok, false)
+    assert.ok(report.round1.failures.some((failure) => failure.check === 's6:window'), JSON.stringify(report.failures))
   })
 })
