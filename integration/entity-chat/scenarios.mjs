@@ -26,19 +26,44 @@ import {
 import {
   BROWSER_NAME,
   MAIN_ROOM,
-  S8_NENT_GAP_REASON,
   TEST_PASSWORD,
-  isEntityRebound,
   isHostNetEntityId,
   isLauncherLoopIndex,
-  reconnectSessionCandidates,
-  shouldRetryReconnectHandshake,
 } from './verify-evidence.mjs'
 import { extractChatEventsFromFrame } from './web/chat-window.js'
 
 export { BROWSER_NAME, MAIN_ROOM, TEST_PASSWORD }
 
 export const ISO_ROOM = 'room-iso'
+const S8_NENT_GAP_REASON = 'runtime rebind did not preserve the authoritative NetEntityId'
+
+function isEntityRebound(disconnected, admitted) {
+  const before = disconnected?.netEntityId
+  const after = admitted?.netEntityId
+  return isHostNetEntityId(before) && isHostNetEntityId(after) && String(before) === String(after)
+}
+
+function reconnectSessionCandidates(bindSessionId, loginName) {
+  const candidates = []
+  const bound = typeof bindSessionId === 'string'
+    && bindSessionId.length > 0
+    && bindSessionId !== '0'
+    && !isLauncherLoopIndex(bindSessionId)
+    ? bindSessionId
+    : null
+  if (bound) candidates.push(bound)
+  else if (typeof loginName === 'string' && loginName.length > 0) candidates.push(`sess-${loginName}`)
+  const retry = typeof loginName === 'string' && loginName.length > 0 ? `sess-${loginName}-re` : null
+  if (retry && !candidates.includes(retry)) candidates.push(retry)
+  return candidates.slice(0, 2)
+}
+
+function shouldRetryReconnectHandshake(error) {
+  const code = error?.reasonCode
+  const message = String(error?.message ?? error ?? '')
+  return code === 'SessionMismatch'
+    || /sessionmismatch|missing host session|missing session|reconnect missing/i.test(message)
+}
 
 export function encodeChatInput(text) {
   const utf8 = Buffer.from(String(text ?? ''), 'utf8')
@@ -1002,15 +1027,16 @@ test('encodeChatInput hello-Bot01 is lowercase hex payload + sha256', () => {
 })
 
 test('observedEventKey is sender:text:roomSequence from a received chat.event', () => {
+  const sender = '10000000000000010000000000000065'
   assert.equal(
-    observedEventKey({ senderNetEntityId: '101', text: 'hello-Bot01', roomSequence: 1, appliedTick: 7 }),
-    '101:hello-Bot01:1',
+    observedEventKey({ senderNetEntityId: sender, text: 'hello-Bot01', roomSequence: 1, appliedTick: 7 }),
+    `${sender}:hello-Bot01:1`,
   )
 })
 
-test('indexBindings joins loginName from accountId and keeps host nent_*', () => {
+test('indexBindings joins loginName from accountId and keeps Runtime 128-bit ids', () => {
   const indexed = indexBindings(
-    [{ netEntityId: 'nent_00000000000000000000000000000001', accountId: 'acct_a', roomId: MAIN_ROOM, entityKind: 'bot', connectionId: 'c1', sessionId: 'sess-Bot01', generation: 1 }],
+    [{ netEntityId: '10000000000000010000000000000001', accountId: 'acct_a', roomId: MAIN_ROOM, entityKind: 'bot', connectionId: 'c1', sessionId: 'sess-Bot01', generation: 1 }],
     [{ loginName: 'Bot01', accountId: 'acct_a' }],
     { loginName: BROWSER_NAME, accountId: 'acct_b' },
   )
