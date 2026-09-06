@@ -5,16 +5,10 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Game.ServerGameplay.Bomber.Contracts.Components;
 
-public sealed partial class BomberBombState : IGeneratedComponent
+public sealed partial class BomberBombState : IGeneratedComponent, IGeneratedSyncMetadata
 {
     partial void OnOwnerNetEntityIdRawChanging(ulong old, ulong @new, ChangeReason reason);
     partial void OnOwnerNetEntityIdRawChanged(ulong old, ulong @new, ChangeReason reason);
-    partial void OnCellXChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellXChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanged(int old, int @new, ChangeReason reason);
     partial void OnFuseEndTickChanging(ulong old, ulong @new, ChangeReason reason);
     partial void OnFuseEndTickChanged(ulong old, ulong @new, ChangeReason reason);
     partial void OnPowerChanging(int old, int @new, ChangeReason reason);
@@ -45,21 +39,18 @@ public sealed partial class BomberBombState : IGeneratedComponent
     void IGeneratedComponent.BindFields(ISyncHost host)
     {
         OwnerNetEntityIdRaw = OwnerNetEntityIdRaw.Bound(host, this, 0, "BomberBombState.ownerNetEntityIdRaw");
-        CellX = CellX.Bound(host, this, 1, "BomberBombState.cellX");
-        CellY = CellY.Bound(host, this, 2, "BomberBombState.cellY");
-        CellZ = CellZ.Bound(host, this, 3, "BomberBombState.cellZ");
-        FuseEndTick = FuseEndTick.Bound(host, this, 4, "BomberBombState.fuseEndTick");
-        Power = Power.Bound(host, this, 5, "BomberBombState.power");
-        ChainId = ChainId.Bound(host, this, 6, "BomberBombState.chainId");
-        BombKind = BombKind.Bound(host, this, 7, "BomberBombState.bombKind");
-        PierceLayers = PierceLayers.Bound(host, this, 8, "BomberBombState.pierceLayers");
-        ExplodedAtTick = ExplodedAtTick.Bound(host, this, 9, "BomberBombState.explodedAtTick");
-        DangerUntilTick = DangerUntilTick.Bound(host, this, 10, "BomberBombState.dangerUntilTick");
-        BurnUntilTick = BurnUntilTick.Bound(host, this, 11, "BomberBombState.burnUntilTick");
-        ReachUp = ReachUp.Bound(host, this, 12, "BomberBombState.reachUp");
-        ReachDown = ReachDown.Bound(host, this, 13, "BomberBombState.reachDown");
-        ReachLeft = ReachLeft.Bound(host, this, 14, "BomberBombState.reachLeft");
-        ReachRight = ReachRight.Bound(host, this, 15, "BomberBombState.reachRight");
+        FuseEndTick = FuseEndTick.Bound(host, this, 1, "BomberBombState.fuseEndTick");
+        Power = Power.Bound(host, this, 2, "BomberBombState.power");
+        ChainId = ChainId.Bound(host, this, 3, "BomberBombState.chainId");
+        BombKind = BombKind.Bound(host, this, 4, "BomberBombState.bombKind");
+        PierceLayers = PierceLayers.Bound(host, this, 5, "BomberBombState.pierceLayers");
+        ExplodedAtTick = ExplodedAtTick.Bound(host, this, 6, "BomberBombState.explodedAtTick");
+        DangerUntilTick = DangerUntilTick.Bound(host, this, 7, "BomberBombState.dangerUntilTick");
+        BurnUntilTick = BurnUntilTick.Bound(host, this, 8, "BomberBombState.burnUntilTick");
+        ReachUp = ReachUp.Bound(host, this, 9, "BomberBombState.reachUp");
+        ReachDown = ReachDown.Bound(host, this, 10, "BomberBombState.reachDown");
+        ReachLeft = ReachLeft.Bound(host, this, 11, "BomberBombState.reachLeft");
+        ReachRight = ReachRight.Bound(host, this, 12, "BomberBombState.reachRight");
     }
 
     void IGeneratedComponent.InvokePostAttribute() => PostAttribute();
@@ -68,41 +59,35 @@ public sealed partial class BomberBombState : IGeneratedComponent
     void IGeneratedComponent.InvokeFieldChanging(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnOwnerNetEntityIdRawChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 1) OnCellXChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 4) OnFuseEndTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 5) OnPowerChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 6) OnChainIdChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 7) OnBombKindChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 8) OnPierceLayersChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 9) OnExplodedAtTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 10) OnDangerUntilTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 11) OnBurnUntilTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 12) OnReachUpChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 13) OnReachDownChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 14) OnReachLeftChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 15) OnReachRightChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 1) OnFuseEndTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 2) OnPowerChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 3) OnChainIdChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 4) OnBombKindChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 5) OnPierceLayersChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 6) OnExplodedAtTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 7) OnDangerUntilTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 8) OnBurnUntilTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 9) OnReachUpChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 10) OnReachDownChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 11) OnReachLeftChanging((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 12) OnReachRightChanging((int)oldValue!, (int)newValue!, reason);
     }
 
     void IGeneratedComponent.InvokeFieldChanged(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnOwnerNetEntityIdRawChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 1) OnCellXChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 4) OnFuseEndTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 5) OnPowerChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 6) OnChainIdChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 7) OnBombKindChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 8) OnPierceLayersChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 9) OnExplodedAtTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 10) OnDangerUntilTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 11) OnBurnUntilTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
-        if (ordinal == 12) OnReachUpChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 13) OnReachDownChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 14) OnReachLeftChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 15) OnReachRightChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 1) OnFuseEndTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 2) OnPowerChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 3) OnChainIdChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 4) OnBombKindChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 5) OnPierceLayersChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 6) OnExplodedAtTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 7) OnDangerUntilTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 8) OnBurnUntilTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 9) OnReachUpChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 10) OnReachDownChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 11) OnReachLeftChanged((int)oldValue!, (int)newValue!, reason);
+        if (ordinal == 12) OnReachRightChanged((int)oldValue!, (int)newValue!, reason);
     }
 
     bool IGeneratedComponent.DispatchClientWrite(in SyncWrite write)
@@ -158,122 +143,120 @@ public sealed partial class BomberBombState : IGeneratedComponent
 
     object? IGeneratedComponent.ReadField(string fieldId)
     {
-        if (string.Equals(fieldId, "ownerNetEntityIdRaw", StringComparison.Ordinal) || string.Equals(fieldId, "OwnerNetEntityIdRaw", StringComparison.Ordinal)) return OwnerNetEntityIdRaw.Value;
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal)) return CellX.Value;
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal)) return CellY.Value;
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal)) return CellZ.Value;
-        if (string.Equals(fieldId, "fuseEndTick", StringComparison.Ordinal) || string.Equals(fieldId, "FuseEndTick", StringComparison.Ordinal)) return FuseEndTick.Value;
-        if (string.Equals(fieldId, "power", StringComparison.Ordinal) || string.Equals(fieldId, "Power", StringComparison.Ordinal)) return Power.Value;
-        if (string.Equals(fieldId, "chainId", StringComparison.Ordinal) || string.Equals(fieldId, "ChainId", StringComparison.Ordinal)) return ChainId.Value;
-        if (string.Equals(fieldId, "bombKind", StringComparison.Ordinal) || string.Equals(fieldId, "BombKind", StringComparison.Ordinal)) return BombKind.Value;
-        if (string.Equals(fieldId, "pierceLayers", StringComparison.Ordinal) || string.Equals(fieldId, "PierceLayers", StringComparison.Ordinal)) return PierceLayers.Value;
-        if (string.Equals(fieldId, "explodedAtTick", StringComparison.Ordinal) || string.Equals(fieldId, "ExplodedAtTick", StringComparison.Ordinal)) return ExplodedAtTick.Value;
-        if (string.Equals(fieldId, "dangerUntilTick", StringComparison.Ordinal) || string.Equals(fieldId, "DangerUntilTick", StringComparison.Ordinal)) return DangerUntilTick.Value;
-        if (string.Equals(fieldId, "burnUntilTick", StringComparison.Ordinal) || string.Equals(fieldId, "BurnUntilTick", StringComparison.Ordinal)) return BurnUntilTick.Value;
-        if (string.Equals(fieldId, "reachUp", StringComparison.Ordinal) || string.Equals(fieldId, "ReachUp", StringComparison.Ordinal)) return ReachUp.Value;
-        if (string.Equals(fieldId, "reachDown", StringComparison.Ordinal) || string.Equals(fieldId, "ReachDown", StringComparison.Ordinal)) return ReachDown.Value;
-        if (string.Equals(fieldId, "reachLeft", StringComparison.Ordinal) || string.Equals(fieldId, "ReachLeft", StringComparison.Ordinal)) return ReachLeft.Value;
-        if (string.Equals(fieldId, "reachRight", StringComparison.Ordinal) || string.Equals(fieldId, "ReachRight", StringComparison.Ordinal)) return ReachRight.Value;
+        if (string.Equals(fieldId, "ownerNetEntityIdRaw", StringComparison.Ordinal)) return OwnerNetEntityIdRaw.Value;
+        if (string.Equals(fieldId, "fuseEndTick", StringComparison.Ordinal)) return FuseEndTick.Value;
+        if (string.Equals(fieldId, "power", StringComparison.Ordinal)) return Power.Value;
+        if (string.Equals(fieldId, "chainId", StringComparison.Ordinal)) return ChainId.Value;
+        if (string.Equals(fieldId, "bombKind", StringComparison.Ordinal)) return BombKind.Value;
+        if (string.Equals(fieldId, "pierceLayers", StringComparison.Ordinal)) return PierceLayers.Value;
+        if (string.Equals(fieldId, "explodedAtTick", StringComparison.Ordinal)) return ExplodedAtTick.Value;
+        if (string.Equals(fieldId, "dangerUntilTick", StringComparison.Ordinal)) return DangerUntilTick.Value;
+        if (string.Equals(fieldId, "burnUntilTick", StringComparison.Ordinal)) return BurnUntilTick.Value;
+        if (string.Equals(fieldId, "reachUp", StringComparison.Ordinal)) return ReachUp.Value;
+        if (string.Equals(fieldId, "reachDown", StringComparison.Ordinal)) return ReachDown.Value;
+        if (string.Equals(fieldId, "reachLeft", StringComparison.Ordinal)) return ReachLeft.Value;
+        if (string.Equals(fieldId, "reachRight", StringComparison.Ordinal)) return ReachRight.Value;
         return null;
     }
 
     void IGeneratedComponent.WriteField(string fieldId, object? value, bool silent)
     {
-        if (string.Equals(fieldId, "ownerNetEntityIdRaw", StringComparison.Ordinal) || string.Equals(fieldId, "OwnerNetEntityIdRaw", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "ownerNetEntityIdRaw", StringComparison.Ordinal))
         {
             if (silent) OwnerNetEntityIdRaw.SetSilent((ulong)value!);
             else OwnerNetEntityIdRaw.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal))
-        {
-            if (silent) CellX.SetSilent((int)value!);
-            else CellX.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal))
-        {
-            if (silent) CellY.SetSilent((int)value!);
-            else CellY.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal))
-        {
-            if (silent) CellZ.SetSilent((int)value!);
-            else CellZ.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "fuseEndTick", StringComparison.Ordinal) || string.Equals(fieldId, "FuseEndTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "fuseEndTick", StringComparison.Ordinal))
         {
             if (silent) FuseEndTick.SetSilent((ulong)value!);
             else FuseEndTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "power", StringComparison.Ordinal) || string.Equals(fieldId, "Power", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "power", StringComparison.Ordinal))
         {
             if (silent) Power.SetSilent((int)value!);
             else Power.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "chainId", StringComparison.Ordinal) || string.Equals(fieldId, "ChainId", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "chainId", StringComparison.Ordinal))
         {
             if (silent) ChainId.SetSilent((ulong)value!);
             else ChainId.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "bombKind", StringComparison.Ordinal) || string.Equals(fieldId, "BombKind", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "bombKind", StringComparison.Ordinal))
         {
             if (silent) BombKind.SetSilent((int)value!);
             else BombKind.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "pierceLayers", StringComparison.Ordinal) || string.Equals(fieldId, "PierceLayers", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "pierceLayers", StringComparison.Ordinal))
         {
             if (silent) PierceLayers.SetSilent((int)value!);
             else PierceLayers.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "explodedAtTick", StringComparison.Ordinal) || string.Equals(fieldId, "ExplodedAtTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "explodedAtTick", StringComparison.Ordinal))
         {
             if (silent) ExplodedAtTick.SetSilent((ulong)value!);
             else ExplodedAtTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "dangerUntilTick", StringComparison.Ordinal) || string.Equals(fieldId, "DangerUntilTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "dangerUntilTick", StringComparison.Ordinal))
         {
             if (silent) DangerUntilTick.SetSilent((ulong)value!);
             else DangerUntilTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "burnUntilTick", StringComparison.Ordinal) || string.Equals(fieldId, "BurnUntilTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "burnUntilTick", StringComparison.Ordinal))
         {
             if (silent) BurnUntilTick.SetSilent((ulong)value!);
             else BurnUntilTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "reachUp", StringComparison.Ordinal) || string.Equals(fieldId, "ReachUp", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "reachUp", StringComparison.Ordinal))
         {
             if (silent) ReachUp.SetSilent((int)value!);
             else ReachUp.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "reachDown", StringComparison.Ordinal) || string.Equals(fieldId, "ReachDown", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "reachDown", StringComparison.Ordinal))
         {
             if (silent) ReachDown.SetSilent((int)value!);
             else ReachDown.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "reachLeft", StringComparison.Ordinal) || string.Equals(fieldId, "ReachLeft", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "reachLeft", StringComparison.Ordinal))
         {
             if (silent) ReachLeft.SetSilent((int)value!);
             else ReachLeft.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "reachRight", StringComparison.Ordinal) || string.Equals(fieldId, "ReachRight", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "reachRight", StringComparison.Ordinal))
         {
             if (silent) ReachRight.SetSilent((int)value!);
             else ReachRight.Value = (int)value!;
             return;
         }
+    }
+
+    bool IGeneratedSyncMetadata.TryGetSyncField(string fieldId, out ISyncField field)
+    {
+        if (string.Equals(fieldId, "ownerNetEntityIdRaw", StringComparison.Ordinal)) { field = OwnerNetEntityIdRaw; return true; }
+        if (string.Equals(fieldId, "fuseEndTick", StringComparison.Ordinal)) { field = FuseEndTick; return true; }
+        if (string.Equals(fieldId, "power", StringComparison.Ordinal)) { field = Power; return true; }
+        if (string.Equals(fieldId, "chainId", StringComparison.Ordinal)) { field = ChainId; return true; }
+        if (string.Equals(fieldId, "bombKind", StringComparison.Ordinal)) { field = BombKind; return true; }
+        if (string.Equals(fieldId, "pierceLayers", StringComparison.Ordinal)) { field = PierceLayers; return true; }
+        if (string.Equals(fieldId, "explodedAtTick", StringComparison.Ordinal)) { field = ExplodedAtTick; return true; }
+        if (string.Equals(fieldId, "dangerUntilTick", StringComparison.Ordinal)) { field = DangerUntilTick; return true; }
+        if (string.Equals(fieldId, "burnUntilTick", StringComparison.Ordinal)) { field = BurnUntilTick; return true; }
+        if (string.Equals(fieldId, "reachUp", StringComparison.Ordinal)) { field = ReachUp; return true; }
+        if (string.Equals(fieldId, "reachDown", StringComparison.Ordinal)) { field = ReachDown; return true; }
+        if (string.Equals(fieldId, "reachLeft", StringComparison.Ordinal)) { field = ReachLeft; return true; }
+        if (string.Equals(fieldId, "reachRight", StringComparison.Ordinal)) { field = ReachRight; return true; }
+        field = null!;
+        return false;
     }
 }

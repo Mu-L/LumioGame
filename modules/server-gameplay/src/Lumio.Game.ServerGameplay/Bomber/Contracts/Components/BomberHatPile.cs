@@ -7,8 +7,5 @@ namespace Lumio.Game.ServerGameplay.Bomber.Contracts.Components;
 public sealed partial class BomberHatPile : Component
 {
     [Persist] public Sync<int> Count = new(Scope.Room, Authority.Server);
-    [Persist] public Sync<int> CellX = new(Scope.Room, Authority.Server);
-    [Persist] public Sync<int> CellY = new(Scope.Room, Authority.Server);
-    [Persist] public Sync<int> CellZ = new(Scope.Room, Authority.Server);
     [Persist] public Sync<ulong> ExpireAtTick = new(Scope.Room, Authority.Server);
 }

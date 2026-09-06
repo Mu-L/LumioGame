@@ -5,16 +5,10 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Game.ServerGameplay.Bomber.Contracts.Components;
 
-public sealed partial class BomberHatPile : IGeneratedComponent
+public sealed partial class BomberHatPile : IGeneratedComponent, IGeneratedSyncMetadata
 {
     partial void OnCountChanging(int old, int @new, ChangeReason reason);
     partial void OnCountChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellXChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellXChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanged(int old, int @new, ChangeReason reason);
     partial void OnExpireAtTickChanging(ulong old, ulong @new, ChangeReason reason);
     partial void OnExpireAtTickChanged(ulong old, ulong @new, ChangeReason reason);
     partial void OnClientWrite(in SyncWrite w, ref bool accept);
@@ -23,10 +17,7 @@ public sealed partial class BomberHatPile : IGeneratedComponent
     void IGeneratedComponent.BindFields(ISyncHost host)
     {
         Count = Count.Bound(host, this, 0, "BomberHatPile.count");
-        CellX = CellX.Bound(host, this, 1, "BomberHatPile.cellX");
-        CellY = CellY.Bound(host, this, 2, "BomberHatPile.cellY");
-        CellZ = CellZ.Bound(host, this, 3, "BomberHatPile.cellZ");
-        ExpireAtTick = ExpireAtTick.Bound(host, this, 4, "BomberHatPile.expireAtTick");
+        ExpireAtTick = ExpireAtTick.Bound(host, this, 1, "BomberHatPile.expireAtTick");
     }
 
     void IGeneratedComponent.InvokePostAttribute() => PostAttribute();
@@ -35,19 +26,13 @@ public sealed partial class BomberHatPile : IGeneratedComponent
     void IGeneratedComponent.InvokeFieldChanging(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnCountChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 1) OnCellXChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 4) OnExpireAtTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 1) OnExpireAtTickChanging((ulong)oldValue!, (ulong)newValue!, reason);
     }
 
     void IGeneratedComponent.InvokeFieldChanged(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnCountChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 1) OnCellXChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 4) OnExpireAtTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
+        if (ordinal == 1) OnExpireAtTickChanged((ulong)oldValue!, (ulong)newValue!, reason);
     }
 
     bool IGeneratedComponent.DispatchClientWrite(in SyncWrite write)
@@ -83,45 +68,32 @@ public sealed partial class BomberHatPile : IGeneratedComponent
 
     object? IGeneratedComponent.ReadField(string fieldId)
     {
-        if (string.Equals(fieldId, "count", StringComparison.Ordinal) || string.Equals(fieldId, "Count", StringComparison.Ordinal)) return Count.Value;
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal)) return CellX.Value;
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal)) return CellY.Value;
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal)) return CellZ.Value;
-        if (string.Equals(fieldId, "expireAtTick", StringComparison.Ordinal) || string.Equals(fieldId, "ExpireAtTick", StringComparison.Ordinal)) return ExpireAtTick.Value;
+        if (string.Equals(fieldId, "count", StringComparison.Ordinal)) return Count.Value;
+        if (string.Equals(fieldId, "expireAtTick", StringComparison.Ordinal)) return ExpireAtTick.Value;
         return null;
     }
 
     void IGeneratedComponent.WriteField(string fieldId, object? value, bool silent)
     {
-        if (string.Equals(fieldId, "count", StringComparison.Ordinal) || string.Equals(fieldId, "Count", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "count", StringComparison.Ordinal))
         {
             if (silent) Count.SetSilent((int)value!);
             else Count.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal))
-        {
-            if (silent) CellX.SetSilent((int)value!);
-            else CellX.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal))
-        {
-            if (silent) CellY.SetSilent((int)value!);
-            else CellY.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal))
-        {
-            if (silent) CellZ.SetSilent((int)value!);
-            else CellZ.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "expireAtTick", StringComparison.Ordinal) || string.Equals(fieldId, "ExpireAtTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "expireAtTick", StringComparison.Ordinal))
         {
             if (silent) ExpireAtTick.SetSilent((ulong)value!);
             else ExpireAtTick.Value = (ulong)value!;
             return;
         }
+    }
+
+    bool IGeneratedSyncMetadata.TryGetSyncField(string fieldId, out ISyncField field)
+    {
+        if (string.Equals(fieldId, "count", StringComparison.Ordinal)) { field = Count; return true; }
+        if (string.Equals(fieldId, "expireAtTick", StringComparison.Ordinal)) { field = ExpireAtTick; return true; }
+        field = null!;
+        return false;
     }
 }

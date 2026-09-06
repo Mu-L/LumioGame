@@ -15,7 +15,7 @@
 |---|---|---|---|
 | **位置** | `BomberPlayerState` 自带 `CellX/Y/Z` + `PosMilliX/Y/Z` 六个 `Sync<int>`；炸弹 / 帽堆 / 糖果各自带 `CellX/Y/Z` | 唯一真值是实体上的 `LogicTransform`；所在格由逻辑位置**推导**（§1.2），组件不存位置 | R-00461（已在 Runtime main） |
 | **属性** | `HealthPoints / BombPower / BombCapacity / SpeedTier` 四个单账 `Sync<int>` | `玩家属性 : AttributeComponent` 一处声明，生成器展开成**基础账 + 当前账**两本（§1.3） | R-00468（RT-4） |
-| **技能** | `MoveIntent` / `PlaceBombIntent` 两个 DTO，规则内核当普通函数调 | `移动技能` / `放弹技能` 两个 `AbilityType`，共享文件两端跑，准入五步，档位「逻辑预测」（§2.1） | R-00468（RT-4） |
+| **技能** | 两个内部命令 DTO（移动意图 / 放弹意图），规则内核当普通函数调 | `移动技能` / `放弹技能` 两个 `AbilityType`，共享文件两端跑，准入五步，档位「逻辑预测」（§2.1） | R-00468（RT-4） |
 | **系统** | 规则内核是普通函数，由 Scenario 宿主在 `WorldManager.Tick()` **前后手调** | 五个 `[System(Phase.ProcessorPlan)]` 注册进第 4 相，`WorldManager.Tick()` 是唯一路径，注册表由生成器产出（§2.2） | R-00462（RT-1） |
 | **伤害** | `DamageApplied` 事件 + 服务端临时命中集合 | 瞬时 `EffectType`，只下单、提交相结算改**基础账**，击杀 = 跨零由引擎判，事件产生点改 `OnFx`（§2.3） | R-00480（RT-5） |
 | **地形** | Game 自有 `ITerrainStore` + `InMemoryChunkStore`，`GetCell` / `GetColumn` / `GetBox` | 引擎体素：帧初批量读整图、帧末一批写、小地图 pin 常驻（§6） | R-00469（E7） |
@@ -118,7 +118,7 @@ public sealed partial class 玩家属性 : AttributeComponent
 
 ### 2.1 技能（`AbilityType`，取代 v1.3.0 的 `Commands/` DTO）
 
-`Bomber/Contracts/Commands/` **整目录已删除**（`MoveIntent` / `PlaceBombIntent`）。移动与放弹是**实体上的 GAS Ability**，共享文件两端编译、两端跑同一段代码，档位「逻辑预测」。入口一律 `Get<AbilityComponent>().Activate<T>(in T.输入)`——客户端调用即上行（生成的 ServerRpc，信封带 `sequence`），服务器在 `ApplyInputs` 相跑准入五步。**代码随 R-00468 落，本卡定形**：
+`Bomber/Contracts/Commands/` **整目录已删除**（原本放移动意图与放弹意图两个 DTO）。移动与放弹是**实体上的 GAS Ability**，共享文件两端编译、两端跑同一段代码，档位「逻辑预测」。入口一律 `Get<AbilityComponent>().Activate<T>(in T.输入)`——客户端调用即上行（生成的 ServerRpc，信封带 `sequence`），服务器在 `ApplyInputs` 相跑准入五步。**代码随 R-00468 落，本卡定形**：
 
 | | `移动技能` | `放弹技能` |
 |---|---|---|
@@ -152,7 +152,7 @@ public sealed partial class 放弹技能 : AbilityType
 
 **准入失败给步序号**（`gas.md` M2）：手上炸弹数为 0 → 步序号 3（消耗）；这格已有炸弹 → 步序号 5（内容层自定义）。**两者都不扣消耗。**
 
-**`方向` 只有四向 + 停**：v1.3.0 的 `MoveIntent(DirX, DirY)` 是八向自由组合，与 §6.1「到路口自动转」的手感规则冲突（斜向没有路口语义）。`方向` 是枚举，不是两个分量。**无垂直分量**——Stage 0 实体恒在游戏 `Z = 0`。
+**`方向` 只有四向 + 停**：v1.3.0 的移动意图 DTO 是 `(DirX, DirY)` 两个分量、八向自由组合，与 §6.1「到路口自动转」的手感规则冲突（斜向没有路口语义）。`方向` 是枚举，不是两个分量。**无垂直分量**——Stage 0 实体恒在游戏 `Z = 0`。
 
 ### 2.2 系统清单（`[System(Phase.ProcessorPlan)]`，取代宿主手调）
 
@@ -194,19 +194,19 @@ public sealed partial class 伤害 : EffectType
 
 | 事件 | 字段 | 产生点 | design.md 出处 |
 |---|---|---|---|
-| `BombPlaced` | `OwnerNetEntityIdRaw, CellX, CellY, CellZ, FuseEndTick, Tick` | `放弹技能.执行` | §7.1 |
+| `BombPlaced` | `OwnerNetEntityIdRaw, Cell, FuseEndTick, Tick` | `放弹技能.执行` | §7.1 |
 | `BombExploded` | `ChainId, SourceBombOwnerNetEntityIdRaw, CellCount, Tick` | `爆炸系统` | §7.2 |
 | `DamageApplied` | `VictimNetEntityIdRaw, SourceBombNetEntityIdRaw, SourceBombOwnerNetEntityIdRaw, ChainId, HealthPointsLeft, Tick` | **`OnFx` 转译** | §7.5（同一颗炸弹对同一玩家只出现一次；单位半心点） |
-| `PlayerDied` | `VictimNetEntityIdRaw, KillerNetEntityIdRaw, ChainId, Cause, CellX, CellY, CellZ, Tick` | **`OnFx` 跨零标记转译** | §9.1（自杀与溺死时 Killer==Victim；`Cause` 0=爆炸 1=溺水 2=燃烧） |
-| `PlayerRespawned` | `NetEntityIdRaw, CellX, CellY, CellZ, Tick` | `帽子系统` 之外的重生逻辑（G-1） | §12 |
-| `HatPileSpawned` | `CellX, CellY, CellZ, Count, ExpireAtTick, Tick` | `帽子系统` | §9.2 |
+| `PlayerDied` | `VictimNetEntityIdRaw, KillerNetEntityIdRaw, ChainId, Cause, Cell, Tick` | **`OnFx` 跨零标记转译** | §9.1（自杀与溺死时 Killer==Victim；`Cause` 0=爆炸 1=溺水 2=燃烧） |
+| `PlayerRespawned` | `NetEntityIdRaw, Cell, Tick` | `帽子系统` 之外的重生逻辑（G-1） | §12 |
+| `HatPileSpawned` | `Cell, Count, ExpireAtTick, Tick` | `帽子系统` | §9.2 |
 | `HatPilePicked` | `PickerNetEntityIdRaw, Count, Tick` | `拾取系统` | §9.2 |
 | `HatPileExpired` | `Count, Tick` | `帽子系统` | §9.2 |
 | `PickupTaken` | `PickerNetEntityIdRaw, Kind, Tick` | `拾取系统` | §7.4 |
 | `HatKingChanged` | `PreviousHatKingNetEntityIdRaw, NewHatKingNetEntityIdRaw, Tick` | `帽子系统` | §9.3（0=无帽王） |
 | `MatchEnded` | `Tick` | 对局阶段机（G-1） | §4.1 |
 
-事件里的 `CellX/CellY/CellZ` 是**事件载荷字段**，由产生方按 §1.2 从 `LogicTransform` 推导后写入——它们不是组件字段，与「位置唯一真值是 `LogicTransform`」不冲突。
+事件里的 `Cell` 是 **`BomberCell(int X, int Y)` 载荷字段**，由产生方按 §1.2 从 `LogicTransform` 推导后写入——它不是组件字段、不参与复制或存档，与「位置唯一真值是 `LogicTransform`」不冲突。v1.3.0 的三个松散 `int` 分量已收敛成一个值类型：Stage 0 实体恒在游戏 `Z = 0`，第三个分量恒为 0。
 
 ## 4. 端口（`Bomber/Contracts/Ports/`）
 
@@ -271,7 +271,7 @@ A/B 变体文件（每个只改一键）：`fuse-1800`、`fuse-2400`、`power-1`
 三个文件，均带 `schemaVersion: 1`：
 
 - `scenario.json`：`{schemaVersion, seed, configVersion, mapSeed, map, bots:[{name, behavior, params}], durationTicks}`。**`map` 携带地形数据本身**——地图不再每次从 `mapSeed` 重生成，否则改一行生成器代码就会让全部历史回放基线静默失效；`mapSeed` 保留作为来源记录。**`map` 的格式是「按 Section 的 `BlockId` 数组」**（v2，取代 v1.3.0 的「由 G-4 定」）：每个 Section 一条 `{sectionKey, blockIds:[4096]}`，顺序按 `cellOffset` 升序——**可直接喂 `blockWrite`**，装载时不需要转换层。须与 L1 编辑器复用同一格式（[`../ugc-ladder.md`](../ugc-ladder.md) L1）。
-- `commands.ndjson`：每行 `{tick, netEntityIdRaw, ability: "移动"|"放弹", 方向?}`。**v2 改动**：命令流是 `Activate<T>` 的输入序列，不再是 `MoveIntent` / `PlaceBombIntent` DTO；`方向` 是四向枚举名，不是 `dirX` / `dirY` 两个分量。
+- `commands.ndjson`：每行 `{tick, netEntityIdRaw, ability: "移动"|"放弹", 方向?}`。**v2 改动**：命令流是 `Activate<T>` 的输入序列，不再是内部命令 DTO；`方向` 是四向枚举名，不是 `dirX` / `dirY` 两个分量。
 - `statehash.ndjson`：每行 `{tick, sha256Hex}`。
 
 **StateHash**（v2，取代 v1.3.0 的「快照 ‖ box 读结果」）：
