@@ -9,7 +9,7 @@ ADR [0015](0015-bomber-stage0a-runtime-capability-finding.md) 锁定「软砖/�
 
 2026-09-04 对 sibling `LumioGameRuntime` 的直接核验证伪了这条实现路径:`modules/ecs/src/Lumio.GameRuntime.Ecs/Sync/SyncTypes.cs:216` 的 `Sync<T>` 文档注释原文是 "Replicated scalar",每个字段一个 `SyncSlot<T>`、一个 ordinal、一个 attributeId,由 `gen-declarations` 逐字段绑定(现有 6 个 Component 共 `FieldCount = 34`),**没有数组、集合或 blob 字段类型**。19×19 = 361 个字段已不可维护,[`design.md`](../../docs/specs/bomber/design.md) §5 的 61×61 = 3721 个字段不可能。唯一的绕法是把整张地图编码进一个 `Sync<string>`,但那样每炸掉一格都要全图重传,且每次写入都对整张地图做一次相等比较——正是分块存储要避免的事。
 
-同时,仓内存在两套互不相容的坐标口径:炸弹人 Stage 0a 契约的 6 个 Component 全部只有 `CellX/CellY`(二维),而体素侧是三维——[`mvp-placevoxel-content-spec.md`](../../docs/specs/engineering/mvp-placevoxel-content-spec.md) §5.1 的 `PlaceVoxelCommand` 是 `Cell: int32 ×3`,架构 v1.4 的 ChunkId 键是 `c:x:y:z`。用户 2026-09-04 定调:炸弹人本质是 3D 体素世界,Stage 0 阶段在俯视角下平铺呈现,但**代码只有一套**,不做二维与三维两份实现。
+同时,仓内存在两套互不相容的坐标口径:炸弹人 Stage 0a 契约的 6 个 Component 全部只有 `CellX/CellY`(二维),而体素侧是三维——`mvp-placevoxel-content-spec.md`(已随 R-00482 删除) §5.1 的 `PlaceVoxelCommand` 是 `Cell: int32 ×3`,架构 v1.4 的 ChunkId 键是 `c:x:y:z`。用户 2026-09-04 定调:炸弹人本质是 3D 体素世界,Stage 0 阶段在俯视角下平铺呈现,但**代码只有一套**,不做二维与三维两份实现。
 
 ## 决策
 
