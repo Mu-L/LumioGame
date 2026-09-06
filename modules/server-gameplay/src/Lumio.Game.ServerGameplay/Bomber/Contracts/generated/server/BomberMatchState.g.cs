@@ -5,7 +5,7 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Game.ServerGameplay.Bomber.Contracts.Components;
 
-public sealed partial class BomberMatchState : IGeneratedComponent
+public sealed partial class BomberMatchState : IGeneratedComponent, IGeneratedSyncMetadata
 {
     partial void OnMatchTickChanging(ulong old, ulong @new, ChangeReason reason);
     partial void OnMatchTickChanged(ulong old, ulong @new, ChangeReason reason);
@@ -95,45 +95,56 @@ public sealed partial class BomberMatchState : IGeneratedComponent
 
     object? IGeneratedComponent.ReadField(string fieldId)
     {
-        if (string.Equals(fieldId, "matchTick", StringComparison.Ordinal) || string.Equals(fieldId, "MatchTick", StringComparison.Ordinal)) return MatchTick.Value;
-        if (string.Equals(fieldId, "startTick", StringComparison.Ordinal) || string.Equals(fieldId, "StartTick", StringComparison.Ordinal)) return StartTick.Value;
-        if (string.Equals(fieldId, "endTick", StringComparison.Ordinal) || string.Equals(fieldId, "EndTick", StringComparison.Ordinal)) return EndTick.Value;
-        if (string.Equals(fieldId, "phase", StringComparison.Ordinal) || string.Equals(fieldId, "Phase", StringComparison.Ordinal)) return Phase.Value;
-        if (string.Equals(fieldId, "hatKingNetEntityIdRaw", StringComparison.Ordinal) || string.Equals(fieldId, "HatKingNetEntityIdRaw", StringComparison.Ordinal)) return HatKingNetEntityIdRaw.Value;
+        if (string.Equals(fieldId, "matchTick", StringComparison.Ordinal)) return MatchTick.Value;
+        if (string.Equals(fieldId, "startTick", StringComparison.Ordinal)) return StartTick.Value;
+        if (string.Equals(fieldId, "endTick", StringComparison.Ordinal)) return EndTick.Value;
+        if (string.Equals(fieldId, "phase", StringComparison.Ordinal)) return Phase.Value;
+        if (string.Equals(fieldId, "hatKingNetEntityIdRaw", StringComparison.Ordinal)) return HatKingNetEntityIdRaw.Value;
         return null;
     }
 
     void IGeneratedComponent.WriteField(string fieldId, object? value, bool silent)
     {
-        if (string.Equals(fieldId, "matchTick", StringComparison.Ordinal) || string.Equals(fieldId, "MatchTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "matchTick", StringComparison.Ordinal))
         {
             if (silent) MatchTick.SetSilent((ulong)value!);
             else MatchTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "startTick", StringComparison.Ordinal) || string.Equals(fieldId, "StartTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "startTick", StringComparison.Ordinal))
         {
             if (silent) StartTick.SetSilent((ulong)value!);
             else StartTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "endTick", StringComparison.Ordinal) || string.Equals(fieldId, "EndTick", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "endTick", StringComparison.Ordinal))
         {
             if (silent) EndTick.SetSilent((ulong)value!);
             else EndTick.Value = (ulong)value!;
             return;
         }
-        if (string.Equals(fieldId, "phase", StringComparison.Ordinal) || string.Equals(fieldId, "Phase", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "phase", StringComparison.Ordinal))
         {
             if (silent) Phase.SetSilent((int)value!);
             else Phase.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "hatKingNetEntityIdRaw", StringComparison.Ordinal) || string.Equals(fieldId, "HatKingNetEntityIdRaw", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "hatKingNetEntityIdRaw", StringComparison.Ordinal))
         {
             if (silent) HatKingNetEntityIdRaw.SetSilent((ulong)value!);
             else HatKingNetEntityIdRaw.Value = (ulong)value!;
             return;
         }
+    }
+
+    bool IGeneratedSyncMetadata.TryGetSyncField(string fieldId, out ISyncField field)
+    {
+        if (string.Equals(fieldId, "matchTick", StringComparison.Ordinal)) { field = MatchTick; return true; }
+        if (string.Equals(fieldId, "startTick", StringComparison.Ordinal)) { field = StartTick; return true; }
+        if (string.Equals(fieldId, "endTick", StringComparison.Ordinal)) { field = EndTick; return true; }
+        if (string.Equals(fieldId, "phase", StringComparison.Ordinal)) { field = Phase; return true; }
+        if (string.Equals(fieldId, "hatKingNetEntityIdRaw", StringComparison.Ordinal)) { field = HatKingNetEntityIdRaw; return true; }
+        field = null!;
+        return false;
     }
 }

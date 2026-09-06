@@ -5,25 +5,16 @@ using Lumio.GameRuntime.Ecs;
 
 namespace Lumio.Game.ServerGameplay.Bomber.Contracts.Components;
 
-public sealed partial class BomberPickupItem : IGeneratedComponent
+public sealed partial class BomberPickupItem : IGeneratedComponent, IGeneratedSyncMetadata
 {
     partial void OnKindChanging(int old, int @new, ChangeReason reason);
     partial void OnKindChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellXChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellXChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellYChanged(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanging(int old, int @new, ChangeReason reason);
-    partial void OnCellZChanged(int old, int @new, ChangeReason reason);
     partial void OnClientWrite(in SyncWrite w, ref bool accept);
 
 
     void IGeneratedComponent.BindFields(ISyncHost host)
     {
         Kind = Kind.Bound(host, this, 0, "BomberPickupItem.kind");
-        CellX = CellX.Bound(host, this, 1, "BomberPickupItem.cellX");
-        CellY = CellY.Bound(host, this, 2, "BomberPickupItem.cellY");
-        CellZ = CellZ.Bound(host, this, 3, "BomberPickupItem.cellZ");
     }
 
     void IGeneratedComponent.InvokePostAttribute() => PostAttribute();
@@ -32,17 +23,11 @@ public sealed partial class BomberPickupItem : IGeneratedComponent
     void IGeneratedComponent.InvokeFieldChanging(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnKindChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 1) OnCellXChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanging((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanging((int)oldValue!, (int)newValue!, reason);
     }
 
     void IGeneratedComponent.InvokeFieldChanged(int ordinal, object? oldValue, object? newValue, ChangeReason reason)
     {
         if (ordinal == 0) OnKindChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 1) OnCellXChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 2) OnCellYChanged((int)oldValue!, (int)newValue!, reason);
-        if (ordinal == 3) OnCellZChanged((int)oldValue!, (int)newValue!, reason);
     }
 
     bool IGeneratedComponent.DispatchClientWrite(in SyncWrite write)
@@ -74,38 +59,24 @@ public sealed partial class BomberPickupItem : IGeneratedComponent
 
     object? IGeneratedComponent.ReadField(string fieldId)
     {
-        if (string.Equals(fieldId, "kind", StringComparison.Ordinal) || string.Equals(fieldId, "Kind", StringComparison.Ordinal)) return Kind.Value;
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal)) return CellX.Value;
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal)) return CellY.Value;
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal)) return CellZ.Value;
+        if (string.Equals(fieldId, "kind", StringComparison.Ordinal)) return Kind.Value;
         return null;
     }
 
     void IGeneratedComponent.WriteField(string fieldId, object? value, bool silent)
     {
-        if (string.Equals(fieldId, "kind", StringComparison.Ordinal) || string.Equals(fieldId, "Kind", StringComparison.Ordinal))
+        if (string.Equals(fieldId, "kind", StringComparison.Ordinal))
         {
             if (silent) Kind.SetSilent((int)value!);
             else Kind.Value = (int)value!;
             return;
         }
-        if (string.Equals(fieldId, "cellX", StringComparison.Ordinal) || string.Equals(fieldId, "CellX", StringComparison.Ordinal))
-        {
-            if (silent) CellX.SetSilent((int)value!);
-            else CellX.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellY", StringComparison.Ordinal) || string.Equals(fieldId, "CellY", StringComparison.Ordinal))
-        {
-            if (silent) CellY.SetSilent((int)value!);
-            else CellY.Value = (int)value!;
-            return;
-        }
-        if (string.Equals(fieldId, "cellZ", StringComparison.Ordinal) || string.Equals(fieldId, "CellZ", StringComparison.Ordinal))
-        {
-            if (silent) CellZ.SetSilent((int)value!);
-            else CellZ.Value = (int)value!;
-            return;
-        }
+    }
+
+    bool IGeneratedSyncMetadata.TryGetSyncField(string fieldId, out ISyncField field)
+    {
+        if (string.Equals(fieldId, "kind", StringComparison.Ordinal)) { field = Kind; return true; }
+        field = null!;
+        return false;
     }
 }

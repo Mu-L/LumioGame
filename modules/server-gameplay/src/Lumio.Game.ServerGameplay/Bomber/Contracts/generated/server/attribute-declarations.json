@@ -14,27 +14,6 @@
     "visibility": "room-public"
   },
   {
-    "attributeId": "BomberBombState.cellX",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberBombState.cellY",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberBombState.cellZ",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
     "attributeId": "BomberBombState.chainId",
     "persistence": "persistent",
     "replication": "replicated",
@@ -112,27 +91,6 @@
     "visibility": "room-public"
   },
   {
-    "attributeId": "BomberHatPile.cellX",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberHatPile.cellY",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberHatPile.cellZ",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
     "attributeId": "BomberHatPile.count",
     "persistence": "persistent",
     "replication": "replicated",
@@ -182,27 +140,6 @@
     "visibility": "room-public"
   },
   {
-    "attributeId": "BomberPickupItem.cellX",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPickupItem.cellY",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPickupItem.cellZ",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
     "attributeId": "BomberPickupItem.kind",
     "persistence": "persistent",
     "replication": "replicated",
@@ -210,70 +147,7 @@
     "visibility": "room-public"
   },
   {
-    "attributeId": "BomberPlayerState.bombCapacity",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.bombPower",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.cellX",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.cellY",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.cellZ",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
     "attributeId": "BomberPlayerState.hatCount",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.healthPoints",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.posMilliX",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.posMilliY",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.posMilliZ",
     "persistence": "persistent",
     "replication": "replicated",
     "valueType": "i32",
@@ -291,41 +165,6 @@
     "persistence": "persistent",
     "replication": "replicated",
     "valueType": "u64",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "BomberPlayerState.speedTier",
-    "persistence": "persistent",
-    "replication": "replicated",
-    "valueType": "i32",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "ChatComponent.lastMessagePersistOnly",
-    "persistence": "persistent",
-    "replication": "not-replicated",
-    "valueType": "utf8-string",
-    "visibility": "server-only"
-  },
-  {
-    "attributeId": "EntityIdentity.claimedMark",
-    "persistence": "ephemeral",
-    "replication": "replicated",
-    "valueType": "utf8-string",
-    "visibility": "claim-scoped"
-  },
-  {
-    "attributeId": "EntityIdentity.entityType",
-    "persistence": "ephemeral",
-    "replication": "replicated",
-    "valueType": "enum:entityType",
-    "visibility": "room-public"
-  },
-  {
-    "attributeId": "EntityIdentity.unmappedMark",
-    "persistence": "ephemeral",
-    "replication": "replicated",
-    "valueType": "utf8-string",
     "visibility": "room-public"
   }
 ]

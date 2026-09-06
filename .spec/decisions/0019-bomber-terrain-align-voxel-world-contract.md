@@ -38,3 +38,9 @@ ADR [0016](0016-bomber-terrain-out-of-ecs-3d-coords.md) 定 `ITerrainStore` 时,
 - G-1 / G-4 / G-6 卡的接口口径随之改写:G-4 出四态读与每条目 revision 的写;G-1 的十字传播改用**列读**(每步一次拿到两层),不再是逐格单读;G-6 的 StateHash 改用 box 读。卡在 `.workflow-drafts/` 的本地 bundle 里,不入库。
 - 仍待引擎侧答复四条,登记进 [`risks-and-engine-asks.md`](../../docs/specs/risks-and-engine-asks.md) A9:`cellOffset` 的确切算式、区域常驻声明、`behaviorTemplate` 可用清单的登记处、单格读的缺块表达。前两条 P0。
 - 本条只对齐口径,不引入实现。Stage 0a 仍然零 Voxel 依赖,`InMemoryChunkStore` 照做;真实 Voxel 集成的前置仍是 A2 与 Runtime 侧那两条(ADR [0015](0015-bomber-stage0a-runtime-capability-finding.md))。
+
+## 被 0021 取代(2026-09-06)
+
+本条中**`ITerrainStore` 的接口形状条款被 ADR [0021](0021-bomber-contract-v2-align-engine-second-exemplar.md) 取代**——该抽象本身已删除,地形改为直接消费引擎体素(R-00469)。具体失效的是:三种读请求的方法签名、四态返回形状、每条目 `expectedRevision` 的 `ApplyBatch` 签名、`ChunkRevision` 的删除说明,以及「StateHash 的地形那一半由确定性 box 读定义」一条(v2 改为各 Section 的 `sectionRevision` 升序拼接)。
+
+本条其余条款**全部保留**:游戏 (X, Y, Z) → 引擎 (x = X, z = Y, y = Z + 1) 的坐标映射、格值是 uint32 无符号 `BlockId` 且玩法层不得直接位运算、九种方块登记进官方全局段、材质类只用 Solid 与 Liquid 两类、方块目录内容归本仓、「阻断爆炸不是引擎的轴」、撤销的三条引擎诉求。
