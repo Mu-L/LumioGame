@@ -3,7 +3,7 @@
 > **状态**：已冻结 v2.0.0
 > **序位 / 适用范围**：体素炸弹人 Stage 0 内核实现卡（G-1..G-7）与网络契约卡（C-1）的唯一契约来源
 > **上游**：[`design.md`](design.md)（策划案）、架构仓 `LumioGameEngine` 的 `.spec/knowledge/features/` —— `bomber-slice.md` §2 / §4（第二样板）、`movement.md` §9.1、`tick.md` §4、`gas.md` M2–M5、`voxel.md` M6–M8；ADR [`0013`](../../../.spec/decisions/0013-logic-first-browser-client-no-engine.md)（逻辑先行）、[`0014`](../../../.spec/decisions/0014-bomber-v04-stage0-convergence.md)（v0.4 收敛）、[`0017`](../../../.spec/decisions/0017-bomber-explosion-and-health-model.md)（爆炸与血量模型）、[`0018`](../../../.spec/decisions/0018-bomber-k1-k2-resolution.md)（K1 / K2 关闭）、[`0021`](../../../.spec/decisions/0021-bomber-contract-v2-align-engine-second-exemplar.md)（**本版依据**：对齐架构第二样板，取代 0015 / 0016 / 0019 的对应条款）
-> **冻结物**：`modules/server-gameplay/src/Lumio.Game.ServerGameplay/Bomber/Contracts/**`（不含 `generated/`）；内容 sha256（源文件按**仓库相对路径**升序、只拼接**文件内容**后整体哈希）：`SHA256_PLACEHOLDER`
+> **冻结物**：`modules/server-gameplay/src/Lumio.Game.ServerGameplay/Bomber/Contracts/**`（不含 `generated/`），共 13 个源文件（5 Components + 5 EntityTypes + 1 Events + 2 Ports）；内容 sha256（源文件按**仓库相对路径**升序、只拼接**文件内容**后整体哈希）：`4df6bc6b3391e956b7f9d72846d96cb0dcf1ad0fbb248c3665e8d63adc839cae`（v1.3.0 为 `d16de07a…`，本版真的动了 C# 源码故重算）
 >
 > **v2.0.0 相对 v1.3.0 的变化**（ADR 0021）：六个环节全部改按架构第二样板重写——位置归 `LogicTransform`、属性走 `AttributeComponent` 两本账、移动 / 放弹为 `AbilityType`、爆炸 / 死亡 / 帽子 / 掉落 / 拾取为 13 相第 4 相系统、伤害为瞬时 `EffectType`、地形走引擎体素批量读写。**这是一次破坏性重冻**：`Bomber/Contracts/Commands/` 整目录删除，四个组件的位置字段与 `BomberPlayerState` 的四个单账属性字段删除，`ITerrainStore` 整节删除，冻结物 sha256 重算。逐环节对照见 §0。
 
