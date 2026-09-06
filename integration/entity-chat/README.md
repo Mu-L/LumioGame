@@ -14,8 +14,7 @@ Formal ECS entity-chat 端到端验收：Account Server + `lumio-entity-chat-rep
 | `verify-evidence.mjs` | 唯一尺子：只读服务器 / 客户端日志，`compareRuns` 逐位比较 |
 | `bot-credential.mjs` | 按 account-server TestHarness 同形签发 Bot-tool credential（测试密钥） |
 | `account-client.mjs` | `lumio-account-v1` login-or-register |
-| `game-client.mjs` | 遗留 mvp-host 客户端（不再是 SUCCESS 路径） |
-| `scenarios.mjs` | 场景脚本（R4-08 拥有，本卡不改） |
+| `scenarios.mjs` | Playwright Browser 观察器与 Runtime WorldChange 客户端 |
 | `static-server.mjs` | web 资产静态服务 |
 | `web/` | Playwright 用的 Browser 聊天页（sender 按两段 u64 / 32-hex 解码） |
 | `logs/` | 收口日志目录（约定见 `logs/README.md`） |

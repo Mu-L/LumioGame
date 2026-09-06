@@ -8,8 +8,8 @@ namespace Lumio.Game.ServerGameplay.Tests;
 /// <summary>Test-only typed command fixture; production framing belongs to Runtime.WireCodec.</summary>
 internal static class RuntimeChatInputFixture
 {
-    public static InputCommandMessage Create(NetEntityId sender, string text, string? connection = null) =>
-        new(ChatMapping.InputMappingId, sender, Payload(text), connection);
+    public static InputCommandMessage Create(ulong sequence, NetEntityId sender, string text, string? connection = null) =>
+        new(sequence, ChatMapping.InputMappingId, sender, Payload(text), connection);
 
     private static byte[] Payload(string text)
     {

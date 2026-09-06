@@ -46,7 +46,7 @@ public sealed class RuntimeDrainConsumerTests
         binding.Manager.Tick();
         RuntimeDrainBatch first = RuntimeDrainConsumer.Consume(binding.Manager.DrainOutbox());
         Assert.Equal("accepted", Assert.IsType<ExpireEntityResult>(Assert.Single(first.Queries)).Outcome);
-        Assert.Contains(first.Frames, message => message is WorldChangeMessage change && change.Destroys.Contains(entity));
+        Assert.Contains(first.Frames, message => message is WorldChangeMessage change && change.Destroys.Any(record => record.NetEntityId == entity));
 
         RuntimeDrainConsumer.EnqueueExpiry(binding.Manager, "expire-2", entity);
         binding.Manager.Tick();
