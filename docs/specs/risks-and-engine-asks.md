@@ -26,15 +26,17 @@
 
 **诉求**：这条桥不通，C# 玩法层就拿不到体素能力。**是全系统的前置。**
 
-### A3 · 渲染与 Unity 工程（① 的前置）
+### A3 · 浏览器客户端宿主与渲染（① 表现层的前置，不阻塞逻辑层）
 
-**现状**：全仓库搜不到 sprite / camera / 渲染管线任何字样；Unity 工程尚未建立，Unity 版本与渲染管线均未选型。
+**现状**：全仓库搜不到 sprite / camera / 渲染管线任何字样；架构 v1.4 §2.1 / §10 把 `LumioClient` 的宿主写成 Unity Host / HybridCLR，目标平台列表未列浏览器；entity-chat 纵切用过一个 Browser 页面（`integration/entity-chat/web/`），但那是验收页不是客户端。
+
+**决策**（ADR 0013）：后续客户端**暂定浏览器**，首发**不接 Unity 等任何游戏引擎**；交付顺序逻辑先行、表现最后接。
 
 **诉求**：
-- Unity 工程与渲染管线选型的**时间点**
-- 谁负责实现 [`art-direction.md`](art-direction.md) 里的相机与描边方案
+- `LumioClient` 提供浏览器宿主（Web Host）：连接 / 握手 / Replica / Prediction / Input 在浏览器内可用，与架构 v1.4 §10 的目标平台列表对齐或经架构 ADR 补列
+- 浏览器内渲染技术选型（Canvas / WebGL 等）与俯视相机方案的**归属与时间点**（归 `LumioClient`，本仓只提需求）
 
-> **这一条对策划影响最大**：画面是 ① 的核心验证目标，但渲染是完全空白的地基。
+> 这一条只前置 ① 的 Stage 0b 起（浏览器客户端接入）；Stage 0a headless 逻辑层不依赖它（[`bomber/design.md`](bomber/design.md) §16）。
 
 ### A4 · 断线重连（② 的前置，③ 的**红线**）
 
@@ -44,7 +46,7 @@
 
 | 产品 | 影响 | 判定 |
 |---|---|---|
-| ① 炸弹人（5–10 分钟滚动局） | 掉线丢当前帽子，重新加入即可回场（滚动房间模型天然缓解，见 ADR-0006） | 可接受 |
+| ① 炸弹人（5–10 分钟滚动局） | 掉线丢当前帽子与装备，重新加入即可回场（滚动房间天然缓解，装备 60 秒内可重获，见 ADR-0006 / 0011） | 可接受 |
 | ② 起床战争（20 分钟） | 掉线毁掉一整局 | 很难受 |
 | ③ 逃离鸭科夫（30 分钟 + 死亡掉装备） | **掉线 = 玩家资产损失** | **会让人退游，立项前必须解决** |
 
@@ -65,6 +67,97 @@
 - **房间目录 + 快速加入**：把玩家丢进一个未满的官方参数房间。① 的设计稿以此为**产品默认入口**（[`bomber/design.md`](bomber/design.md) §11）；房间码保底可先行，故**不硬阻塞 ①**，但落地前产品入口不完整。
 - **技能 / 段位匹配**：仍不做，用户量起来后进路线图。
 
+### A7 · 100 人房间的 AOI 复制（① 阶段 1 压测的前置）
+
+**现状**：Mapping 声明含 `AOI/Visibility` 字段（v1.4 §5.3），但 Runtime `replication`（R-00172）未落地，AOI 是否实际生效未知；架构 §12 要求的 1/10/25/50/100 人 Workload Profile 尚无「炸弹人 100 人」档。
+
+**诉求**：① 按 ADR-0011 以单房间 100 人为官方房上限。100 客户端 × 移动 / 炸弹 / 帽子 / 掉落物的复制量必须靠 AOI 过滤，否则带宽线性爆炸。需要：AOI 字段在 R-00172 落地时实际生效；Workload Profile 增加「炸弹人 100 人」档（放弹频率约每人 3 秒 1 颗、方块修改率见 A8）。① 阶段 1 的 100 bot 压测直接产出这条基线。
+
+### A8 · 方块写入速率与 Delta 复制预算（已由上游契约结案）
+
+**现状**：架构明确「跨 World 事务有成本」，但没有可接受的每秒方块修改率与 Voxel Delta 复制阈值。
+
+**本仓的数字**：100 人满负载估算**每秒 100–300 格**软砖破坏（推断，[`bomber/design.md`](bomber/design.md) §7.4），外加软砖再生批量写入与「筑墙 / 钻头」技能的 CrossWorldTxn。**最需要阈值的是尖峰而非均值**：连锁不设上限（ADR [0016](../../.spec/decisions/0016-bomber-terrain-out-of-ecs-3d-coords.md)），一条链最坏约 **1200 格落在同一 tick**（100 人、约 50 颗弹并入同一 ChainId）；此外出生点清软砖 ≤ 2 格 / 次、峰值约 33 次 / 秒（100 人 ÷ 3 秒重生）。设计侧已封顶（单次爆炸 ≤ 24 格、穿透 / 分裂只在高等级、再生低频批写；据点围院内无软砖，人群最密处不产生方块写入；技能 × 场景交互只有「冰冻水方格」产生临时方块写入，列为阶段 3 候选，木头燃烧是区域 Effect 不写方块）。
+
+**结案（ADR [0019](../../.spec/decisions/0019-bomber-terrain-align-voxel-world-contract.md)）**：不再需要引擎给阈值。上游契约 `voxel-world-v1.json` 的 `sectionPayload` 冻结了 **Delta 增量编码**——Section 在接收方就位后的后续改动按条派发，每条 = 格内偏移（0~4095）+ 32 位 BlockId = **6 字节**。1200 格落在同一 tick 即 **7.2 KB / 客户端 / tick**，与全量一条约 4.3 KB 在同一量级；写入侧 `blockWrite.batch` 上限 65536 条 / 批，最坏 1200 条占 1.8%。**故：不下调火力上限、不改穿透规则、不做分帧提交。** §17.2 的埋点保留，用于事后核对而非事前设限。
+
+> 前提是 Delta 的 `baseSectionRevision` 对得上；对不上契约要求拒收并请求一次全量重发（约 4.3 KB / Section），这是退化路径不是常态。
+
+**2026-09-04 实测补充（ADR [0015](../../.spec/decisions/0015-bomber-stage0a-runtime-capability-finding.md)）**：对 `LumioGameRuntime` 源码与其自身测试的直接核验证实，`IVoxelWorldPort` 及其请求/结果类型全部 `internal`，唯一公开的 `CoordinationModule.Create` 固定接一个私有 `FailClosedVoxelWorldPort`；Runtime 自身有一条反向测试（`VoxelAdapterSurfaceTests.SubstituteVoxelContractTypesAreNotExported`）用反射断言 Voxel 契约类型永不导出——这是刻意的架构边界，不是尚未补齐的疏漏。同时确认 `modules/ecs` 无任何 `ISystem`/`IProcessor` 抽象，`modules/simulation` 的 Processor 组合/会话构造均为 `internal`，消费方无法注册自定义 Processor 参与 Logical Tick。两项合起来意味着：即使 A2（Voxel C 接口导出）解决，Game 今天也**没有公开入口**发起真实 CrossWorldTxn 或挂入 Runtime 的 Tick 编排。**应对**（ADR 0015）：炸弹人 Stage 0a 不等待这两项能力——地形与规则结算由 Game 自行编排的普通 C# 函数驱动（Chat 功能已验证的同一模式），真实 Voxel 集成留给 Stage 2+ 且以本条与 A2 解除为前置。**这两项（公开 Processor 注册面、公开或可测试替身的 IVoxelWorldPort）目前只是消费方观察到的现状，是否开放属 `LumioGameRuntime` 自身路线图决策，本仓不代其立项，只记录消费方影响。**
+
+### A9 · 炸弹人对 Voxel 侧的需求清单（汇总）
+
+ADR [0016](../../.spec/decisions/0016-bomber-terrain-out-of-ecs-3d-coords.md) 把地形移到 `ITerrainStore` 之后，本仓对 Voxel 侧的诉求可以完整列出。ADR [0019](../../.spec/decisions/0019-bomber-terrain-align-voxel-world-contract.md) 按上游公共契约 `engine/wire/voxel-world-v1.json`（架构源 `LumioGameEngine`，`contractId: lumio.voxel-world.v1`）与配套设计概要重新核对了这张清单，**大半条目已结案**。下面逐条标注状态。
+
+**① 方块目录 —— 已降级，不再是提给引擎的需求。**
+
+契约 `blockCatalog.mintingProcedure` 原文：「官方内容层在目录里加一行；**实现仓不得自行铸号**」。引擎交付的是**机制**——BlockType 段表（作用域位 bit 23、全局段 256 起连号稠密）、材质类的两个类（Solid / Liquid）与四轴（mesh / renderPass / collision / lightAttenuation）、目录行的六字段结构与加载期逐行校验。**表里填什么是本仓的配置**，随 `GameReleaseId` 锁。
+
+炸弹人的九种方块（按游戏坐标分层，映射见 ADR 0019）：
+
+| 层 | 方块 | 材质类 |
+|---|---|---|
+| 砖层 `z = 0` | Air（空地）、铁皮（硬砖）、积木（软砖）、木箱、木头、鞭炮 | 全 Solid |
+| 地面层 `z = -1` | 地面、冰 | Solid |
+| 地面层 `z = -1` | 水 | Liquid |
+
+Stage 0a 只用前三种（Air / 铁皮 / 积木）。九种全部登记进**官方全局段**（作用域位 = 0）：它们跨房间恒定、玩法代码要写常量，且起床战争与 duckoff 大概率复用同一批；房间局部段是玩家素材库，不放官方内容。
+
+**「可破坏 / 阻断爆炸 / 破坏后残留 / 掉落 / 地面效果 / 可通行」不是引擎的轴**，是本仓配表的玩法列。引擎的 `Liquid.collision = passable`——**水在引擎里不挡路**；水阻断爆炸、禁止放弹、溺水全是本仓读 BlockId 后自己判，不走引擎碰撞面。
+
+**② 接口形状 —— 已由契约冻结，本仓照抄。**
+
+```text
+读  cell(单个世界坐标)
+    column((x, z) + y 范围)          自下而上的 BlockId 数组
+    box(轴对齐矩形，固定序 y 外 / z 中 / x 内)
+    → BlockId + 每个被覆盖 Section 的 sectionRevision + 四态标注
+      顺序排死，同一请求两次运行逐字节相同；上限 262144 格 / 请求
+写  entry{sectionKey, cellOffset, blockId, expectedSectionRevision}
+    批 = 若干 entry + transactionId，all-or-nothing、幂等；上限 65536 条 / 批
+```
+
+原先登记的「爆炸传播每步要读两层（`z = 0` 判阻断与破坏、`z = -1` 判水是否挡火），单次爆炸最多 48 次读；若逐格调用开销高，需要一个读一列或读矩形的批量查询」——**这条诉求已被满足**：`column` 请求就是读一列，契约自述的理由正是「地形高度、落点、掉落判定都是按列问的」。全图 61×61×2 = 7442 格，一次 `box` 读占预算的 2.8%。
+
+**③ 写入量**：见 A8（已结案）。
+
+**④ 确定性快照 —— 已由确定性 box 读替代。**
+
+原诉求是「地形要能产出确定性 canonical 字节，编码对齐架构源的 `voxel-snapshot-payload`（ADR-035）」。核验发现该 ADR 定的是 snapshot **载荷信封**，从不定义方块字节，这条依据不成立（ADR 0019）。契约 `blockRead` 的 box 请求已冻结「顺序排死，同一请求两次运行逐字节相同」，够用：StateHash 的地形那一半 = 对一次覆盖全图的 box 读结果求 SHA-256。**不需要引擎另外提供地形 canonical 存档字节。**
+
+**⑤ 极扁世界的 chunk 尺寸 —— 撤销。**
+
+`limits` 已冻结 Section 16³、每 Chunk 16 层、世界高 256、调色板 256 项 / 索引 8 位，`notes` 原文「尺寸与坐标语义一经冻结即不可变更；改动它等于全量转档，没有例外」。61×61×2 在引擎坐标里是 **16 个 Section**（4×4，竖直只占 Section 层号 0），全图 64 KB。边界 Section 只用 13 列、每个 Section 只用 2/16 高度都不构成问题——同步走 Delta，字节数随改动量而非地图大小增长。不需要确认。
+
+**⑥ 明确不需要的**（同样是有用的信息）：
+
+| 模块 | 为什么不需要 |
+|---|---|
+| `streaming`（M8 流式加载） | 61×61×2 ≈ 7442 格 = 16 个 Section，全图常驻，无需 Load/Unload。**但常驻本身需要一个声明手段，见 A9-2** |
+| `mesh`（M4 网格生成与零拷贝） | 俯视格子地形由本仓自己画（ADR [0013](../../.spec/decisions/0013-logic-first-browser-client-no-engine.md) 逻辑先行、首发不接游戏引擎）。**新信息**：上游产品前提已改为「体素 Rust 编译成 WASM 在浏览器页面里跑」，技术上「让引擎画地形」是通的；若改由引擎画，M4 与零拷贝三条纪律（释放契约 / 失效校验 / 线性内存搬迁）即进关键路径，本行须重写 |
+| `collision`（M7 的碰撞响应） | 俯视格子移动，可通行是玩法层的格判定。注意契约红线 `noSecondPhysicsSurface` 与 `noCollisionBranchOutsideMaterialTable` 针对的是**物理查询**面；本仓的格判定读 BlockId 自行结算，不实现第二套地形检测 |
+| `migration` | [`product-direction.md`](product-direction.md)「每局独立地图，局结束即回收」，无跨局存档 |
+| `spatial` | 爆炸是十字直线扫描；契约本身也不为地形建空间树（`noSpatialTree`） |
+| `M6a` 方块↔实体绑定 | 木箱按 `bomber/design.md` §5.1 归地形且无业务数据（掉落是玩法结算）；带库存的容器不在炸弹人里 |
+
+**⑦ 仍需引擎侧答复的四条**：
+
+| # | 诉求 | 级别 | 为什么 |
+|---|---|---|---|
+| **A9-1** | `cellOffset` 的确切算式 | **P0** | `blockWrite.entry` 只写「由 `worldY&15`、`worldZ&15`、`worldX&15` 按固定序合成」。读侧固定序是「y 外层、z 中层、x 内层」，唯一自洽解读是 `(y&15)*256 + (z&15)*16 + (x&15)`，但契约没写出算式。两端各解一次即静默错位写入 |
+| **A9-2** | 区域常驻声明 | **P0** | `residency` 只有脏页、落盘回执与卸载栅栏，没有「这片区域我要它一直在内存里」。炸弹人 16 个 Section 全图常驻、不走流式调度；缺这条，`blockRead` 一旦返回 Pending 只能挂起，而爆炸结算必须在同 tick 内算完 |
+| **A9-3** | `behaviorTemplate` 可用清单的登记处 | P2 | `blockCatalog.rowShape` 写「满格 Solid / 楼梯 / 半砖 / 门 / Liquid 等」——"等"后面有什么、清单在哪、谁维护未定；而 `mintingProcedure` 要求加载期校验「行为模板已声明」。本仓只用满格 Solid 与 Liquid，不阻塞 |
+| **A9-4** | 单格读的缺块表达 | P2 | `blockRead.requests.cell` 的 output 只写「一个 BlockId + sectionRevision」，四态在 `presence.shape` 里是「按 Section 分段标注」——单格读逻辑上能表达，措辞未闭合 |
+
+**⑧ 两条硬阻塞（现状，不是需求）**：
+
+1. **没有块存储。** `lumio-voxel-domain` 的 `SectionPage` 至今只持有不透明 `bytes`，编码写死 `"Dense"`、页 schema 取自 `legacy_baseline`（已废基线的产物 id）；全仓没有任何按坐标读写一格的函数。契约的 Uniform / Palette / Raw / Delta 四种编码目前只是 `lumio-voxel-contracts` 里的字符串常量。
+2. **没有 C ABI**（A2）。`LumioVoxelEngine` 零 `#[no_mangle]`、零 `crate-type = ["cdylib"]`。**排在第 1 之后**——先得有东西可导出。
+
+> 顺序在 ADR 0019 修正过：原先写成「解除 C ABI 即可调到 Rust 侧已完成的领域实现」，是错的——不是 ABI 挡着，是**块存储本身还没有**。
+
+另有两条不归 Voxel、归 `LumioGameRuntime` 路线图：无公开 Processor 注册面、`IVoxelWorldPort` 为 `internal` 且有反射测试断言 Voxel 契约类型永不导出（见 A8 实测补充与 ADR 0015）。
+
 ---
 
 ## 二、策划侧自己承担的风险
@@ -73,10 +166,10 @@
 
 「3D 体素 + 2D 角色 + 俯视角」几乎没有先例。**万一不好看，越晚发现越贵。**
 
-**应对**：抛弃型原型（纯 Unity、单机、不接引擎），只回答"好不好看、好不好玩"。
+**应对**（ADR 0013 后修订）：不再做「纯 Unity 抛弃型原型」。画面验证分两步：比稿期用 AI 出图与静帧（[`art-style-pitch.md`](art-style-pitch.md)）回答「好不好看」；逻辑层跑通后在浏览器渲染原型上回答「画面 + 玩法合在一起成不成立」。
 **验收**：截图给不认识这个项目的人看，问"这好看吗"、"这是什么游戏"。
 
-> 注：当前决策是**先写完整策划案、再做原型**。本文档完成即意味着原型可以启动。
+> 注：接受的代价是画面问题比「原型先行」路线更晚暴露；换取的是逻辑层不被 A1–A3 卡住（ADR 0013）。
 
 ### B2 · 模式数据格式表达力不足
 
@@ -88,7 +181,7 @@
 
 架构评审明确写着移动端的内存 / 启动 / 热更预算**未经验证前不作为默认能力**。
 
-**应对**：Windows 优先是对的。移动端操作方案在 ① 的设计里已经考虑（虚拟摇杆 + 两键），但**不承诺首发上移动端**。
+**应对**：桌面浏览器优先（ADR 0013）。触屏操作方案在 ① 的设计里已经考虑（虚拟摇杆 + 两键），但**不承诺首发上触屏浏览器**；原生移动端随「不接游戏引擎」一并不在首发范围。
 
 ### B4 · 长局的观战体验
 
@@ -102,14 +195,28 @@
 
 **应对**：[`art-direction.md`](art-direction.md) 是三款共用的强制规范；角色按 8 向制作以保证跨产品复用。
 
+### B6 · 100 人下的可读性
+
+支柱 1 修订为「帽子塔是局部计分板，Top-10 是全局摘要」（ADR-0011）。屏幕内同时出现 6–8 个帽塔加一根帽王光柱，俯视 55°–65° 下能否一眼分出高低，未经验证。血量（ADR-0012）用玩偶破损三档表达，8 向 × 3 态的美术量与 100 人下他人血量的读数同入此项。
+
+**应对**：并入 B1 画面验证清单；不醒目则按设计稿 §9.3 引入屏幕边缘方向箭头等额外指示。
+
+### B7 · 装备系统扩大首发范围
+
+3 槽装备 + 15 个技能把 ① 从「极简底盘」扩成带局内成长的产品，首发范围与验证周期都变大。
+
+**应对**（ADR 0014）：装备后移到 Stage 5 可选切片，且缩为每槽 2 个共 6 个首测技能；只有核心模式通过 Stage 4 的留局门与可读性门才开启，恶化则关 Feature Flag 以无装备版本发布（设计稿 §8 / §16）。
+
 ---
 
 ## 三、优先级汇总
 
 | 级别 | 项 |
 |---|---|
-| **阻塞 ①** | A1 网络传输、A2 Rust↔C# 桥、A3 渲染与 Unity 工程 |
-| **① 期间必须并行** | B1 画面验证、B2 模式数据格式设计 |
+| **阻塞 ① Stage 0b 起（浏览器客户端接入）** | A1 网络传输、A2 Rust↔C# 桥、A3 浏览器客户端宿主与渲染 |
+| **① Stage 0a（headless 逻辑层）** | 不被 A1–A3 阻塞（ADR 0013）；依赖上游命令包络 / Component Schema / 契约生成器可运行（设计稿 §16 Gate 0） |
+| **① Stage 2–3（24/48/100 Bot）前置** | A7 100 人 AOI 复制、A9 ⑧ 的两条硬阻塞（块存储 → C ABI，按此顺序）、A9-1 / A9-2（P0，见 A9 ⑦）。A8 与 A9 的 ①②④⑤ 已结案；Stage 0a 用 Game 自有 `InMemoryChunkStore`，全不阻塞 |
+| **① 期间必须并行** | B1 画面验证（后移到浏览器渲染原型）、B2 模式数据格式设计、B6 100 人可读性、B7 首发范围对冲 |
 | **阻塞 ②** | A4 断线重连 |
 | **阻塞 ③** | A4 断线重连（红线）、A5 账号级持久化 |
 | **① 入口依赖（房间码保底，不硬阻塞）** | A6 房间目录 + 快速加入 |

@@ -7,7 +7,7 @@
 
 ## 项目是什么
 
-`LumioGame` 是 Lumio 游戏产品、Gameplay Content、发布组合和产品语义的唯一事实源，主要承载 C#/.NET Gameplay、配置、内容、Scenario、Migration 与 Unity/HybridCLR 客户端内容。
+`LumioGame` 是 Lumio 游戏产品、Gameplay Content、发布组合和产品语义的唯一事实源，主要承载 C#/.NET Gameplay、配置、内容、Scenario、Migration 与客户端玩法内容(后续客户端暂定浏览器,首发不接 Unity 等游戏引擎,见 ADR 0013)。
 
 - 当前处于预上线 Living Architecture 阶段；公共架构与契约的唯一来源是 `LumioGameEngine`，其 `.spec/knowledge/features/architecture.md` 与 `engine/abi` / `engine/wire` 是本仓的只读参考。
 - 本仓拥有玩法与产品发布语义，不拥有 Native/Voxel 内部、网络连接、Host 进程或 Runtime 生命周期。
