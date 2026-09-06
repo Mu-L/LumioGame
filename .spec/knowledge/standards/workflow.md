@@ -15,7 +15,7 @@ metadata:
 
 - `main` 是共享集成基线；现有 Repository Policy 在 `push` 与 `pull_request` 到 `main` 时执行。
 - 需要协作或审查的改动使用短生命周期分支并合入 `main`。任何 push/PR 等对外发布动作仍受 [`rules/system.md`](../../rules/system.md) 的确认要求约束。
-- 公共架构变更不从本仓直接发起：先在 `LumioGameEngineArchitecture` 完成 ADR、Schema、正向/失败 Fixture、Baseline 与契约校验，再同步本仓只读镜像。
+- 公共架构变更不从本仓直接发起：先在架构仓 `LumioGameEngine` 完成 ADR 与 `engine/wire` / `engine/abi` 的契约变更，再更新本仓的消费口径；本仓不保存架构镜像。
 
 ## 提交规范（通用）
 

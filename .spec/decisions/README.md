@@ -2,7 +2,7 @@
 
 用 ADR(Architecture Decision Record)记录决策:为什么这样调度、为什么定这种结构、为什么划这条边界。**本目录是全仓决策记录的唯一落点**——功能内决策与框架级决策都记这里,feature 文档只描述设计现状,不留决策记录。
 
-> 跨仓公共语义的决策只在 `LumioGameEngineArchitecture` 维护；本目录仅记录 Game 产品实现决策，从 `0001` 开始编号。
+> 跨仓公共语义的决策只在架构仓 `LumioGameEngine` 维护；本目录仅记录 Game 产品实现决策，从 `0001` 开始编号。
 
 ## 怎么写一条 ADR
 
@@ -47,3 +47,4 @@
 | [0017](0017-bomber-explosion-and-health-model.md) | 炸弹人爆炸与血量模型修订:炸弹实体持有火焰、血量改半心点、水改为可溺死 | 生效 |
 | [0018](0018-bomber-k1-k2-resolution.md) | 解决契约 v1.1.0 的两条缺口:DamageApplied 补来源炸弹身份、两个区间默认值收敛为单值 | 生效 |
 | [0019](0019-bomber-terrain-align-voxel-world-contract.md) | 炸弹人地形口径对齐上游体素契约:坐标映射、BlockId、blockRead / blockWrite 形状 | 生效 |
+| [0020](0020-exit-legacy-contract-regime.md) | 退出旧合同制:删架构镜像与基线闸门,公共语义改指架构仓 Living Architecture | 生效 |
