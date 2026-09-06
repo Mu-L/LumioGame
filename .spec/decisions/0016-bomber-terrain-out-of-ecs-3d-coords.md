@@ -30,3 +30,9 @@ ADR [0015](0015-bomber-stage0a-runtime-capability-finding.md) 锁定「软砖/�
 - Stage 2 的「换成真实 Voxel 存储」从「替换一份 Component 状态」变成「替换 `ITerrainStore` 的一个实现」,调用方零改动。代价是 Stage 0a 要多写一层看似多余的分块与 revision 机制。
 - 地图存数据使 `scenario.json` 变大(61×61×2 层约 7442 格),换来生成器可自由演进而历史回放不失效。
 - 三维坐标使全部 Cell 字段多一个分量,`Sync` 字段总数上升;Stage 0a 这些 Z 分量恒为 0,复制开销可由后续量化压缩处理,不在本 ADR 范围。
+
+## 被 0021 取代(2026-09-06)
+
+本条的「地形走 Game 自有 `ITerrainStore`」一条**被 ADR [0021](0021-bomber-contract-v2-align-engine-second-exemplar.md) 取代**:架构仓已把体素读写立成卡 R-00469,地形直接消费引擎体素(帧初批量读、帧末一批写、区域 pin),Game 侧不再有 `ITerrainStore` 抽象,`InMemoryChunkStore` 一并作废。
+
+本条其余条款继续有效:坐标一律三维、地形不进 ECS、动态物是 Entity 而地形是数据、地图以数据持久化、实体恒 `Z = 0`。

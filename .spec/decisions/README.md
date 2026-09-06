@@ -48,3 +48,4 @@
 | [0018](0018-bomber-k1-k2-resolution.md) | 解决契约 v1.1.0 的两条缺口:DamageApplied 补来源炸弹身份、两个区间默认值收敛为单值 | 生效 |
 | [0019](0019-bomber-terrain-align-voxel-world-contract.md) | 炸弹人地形口径对齐上游体素契约:坐标映射、BlockId、blockRead / blockWrite 形状 | 生效 |
 | [0020](0020-exit-legacy-contract-regime.md) | 退出旧合同制:删架构镜像与基线闸门,公共语义改指架构仓 Living Architecture | 生效 |
+| [0021](0021-bomber-contract-v2-align-engine-second-exemplar.md) | 炸弹人 Stage 0 契约升 v2.0.0,六个环节改按架构第二样板重写 | 生效 |

@@ -29,3 +29,9 @@ design.md §16 Gate 0 已把「爆炸批量挖块事务与 A8 阈值走上游 AD
 - Stage 2 起若要把 Stage 0a 的 Game 自有网格换成真实 Voxel 存储,是一次已知的、有意为之的架构替换点,不是技术债——替换前提是 Gate 0 的 A8 上游 ADR 落地且 `LumioVoxelEngine` 已导出可用接口(A2)。
 - 「Runtime 无公开 Processor/公开 IVoxelWorldPort」的现状可能随 Runtime 自身路线图变化;本 ADR 的技术前提若变化(如 Runtime 后续开放这两个面),不需要撤销本 ADR,但 Stage 2+ 的实现应重新评估是否切换到 Runtime 原生机制。
 - 好处:Stage 0a 完全不依赖跨仓的 Runtime 能力扩展,可在 A1–A3(网络、Rust↔C# 桥、渲染)与 Runtime 自身的 Processor/Voxel 路线图之外独立推进,契合 ADR 0013「headless 优先、不被引擎侧卡住」的初衷。
+
+## 被 0021 取代(2026-09-06)
+
+本条的「规则内核不经 Runtime `simulation`/`coordination`,改为 Game 自有普通 C# 函数、由 Scenario 宿主在每次 `WorldManager.Tick()` 前后按固定顺序调用」**编排条款被 ADR [0021](0021-bomber-contract-v2-align-engine-second-exemplar.md) 取代**:架构仓 2026-09-05 已把系统注册面立成 Runtime 卡 R-00462,玩法系统改为 `[System(Phase.ProcessorPlan)]` 注册进 13 相第 4 相,`WorldManager.Tick()` 是唯一路径。
+
+核验 ①④ 的结论继续有效。②③⑤ 的**结论**(2026-09-04 当日不可行)是当日事实、继续成立,但**处置**改由引擎卡提供能力:② → R-00462,③ → R-00469,⑤ → 地形是体素、本就不该进 ECS。
