@@ -24,7 +24,7 @@
 
 ## 契约来源
 
-公共语义的唯一事实源是架构仓 [`LumioGameEngine`](https://github.com/LumioGames/LumioGameEngine)，本仓只消费、不复制，也不保存镜像：
+本仓处于预上线 Living Architecture 阶段，不发布或复制冻结基线。公共语义的唯一事实源是架构仓 [`LumioGameEngine`](https://github.com/LumioGames/LumioGameEngine)，本仓只消费、不复制，也不保存镜像：
 
 - ABI：`engine/abi/native-abi.json`
 - 线上语义：`engine/wire/*.json`（每条公共契约各一份）
@@ -33,6 +33,8 @@
 本仓不复述任何公共契约字段。要查字段、错误码、消息 ID 或依赖方向，一律回架构仓读上述来源；本仓文档只写「在炸弹人里这条契约怎么用」。公共语义要改，先在架构仓改，不在本仓自行改写。
 
 `LumioGame` 位于依赖图最上层，把 Runtime、Server、Client 和玩法内容组合成具体游戏，产出同一 `ProductId + GameReleaseId` 下的 Gameplay、配置、内容、Scenario 与 Migration。
+
+本仓库拥有玩法语义，不拥有 Native、Voxel 内部、网络连接、Host 进程或 Runtime 生命周期。
 
 本仓库拥有玩法语义，不拥有 Native、Voxel 内部、网络连接、Host 进程或 Runtime 生命周期。
 
