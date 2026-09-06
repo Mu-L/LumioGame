@@ -22,7 +22,6 @@
 | 文档 | 状态 | 一句话 |
 |---|---|---|
 | [engineering/module-scaffolding-design.md](engineering/module-scaffolding-design.md) | 设计中 | 模块脚手架设计:10 子模块目录、C# 工程基线(global.json/Build.props 族)、依赖边界与首批拆卡蓝图——建工程、拆脚手架卡前查 |
-| [engineering/mvp-placevoxel-content-spec.md](engineering/mvp-placevoxel-content-spec.md) | 设计中 | MVP 内容规格:PlaceVoxelAbility(挖/放方块)GAS 内容、Mapping、最小 config/content 面与 Runtime 接口假设——做 MVP 内容卡前查 |
 
 ## 产品
 
