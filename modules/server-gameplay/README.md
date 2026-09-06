@@ -9,7 +9,8 @@
 ## 负责什么
 
 - 引用 Runtime `Lumio.GameRuntime.Samples.Username.Server` 的唯一 `[EcsComponent] ChatComponent`（Game 不声明第二份类）。
-- `ChatSetMessageSystem` 将 C-1 `chat.input` 信封送进 `WorldManager.Enqueue`，或在 Owner Thread 调用 Runtime `ChatComponent.SendMessage`。
+- `ChatSetMessageSystem` 将 C-1 输入交给 Runtime `WireCodec` 校验并把 typed `InputCommandMessage` 送进 `WorldManager.Enqueue`，或在 Owner Thread 调用 Runtime `ChatComponent.SendMessage`。
+- `RuntimeDrainConsumer` 只消费 Runtime `Drain` 的 `Frames` 与 `drain.queries`，并通过 Runtime owner-thread controls 提交绑定查询和过期请求；Game 不维护本地绑定、查询结果或 tombstone。
 - 执行 C-1 冻结的输入 UTF-8 512 字节上限（政策 reject：`chat_text_too_long`）。
 
 ## 明确不负责什么

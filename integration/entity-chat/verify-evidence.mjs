@@ -42,8 +42,14 @@ export function parseNdjson(text) {
     if (!trimmed) continue
     try {
       const ev = JSON.parse(trimmed)
-      if (isObject(ev)) events.push({ line: i + 1, ev })
-    } catch { /* skip */ }
+      if (!isObject(ev)) {
+        events.push({ line: i + 1, ev: null, error: 'record_not_object' })
+        continue
+      }
+      events.push({ line: i + 1, ev })
+    } catch {
+      events.push({ line: i + 1, ev: null, error: 'malformed_json' })
+    }
   }
   return events
 }
@@ -155,15 +161,57 @@ function entityTypeOf(ev) {
   return null
 }
 
+function isRuntimeDrain(ev) {
+  const kind = kindOf(ev)
+  return kind === 'drain' || kind === 'runtime.drain' || kind === 'drain.outbox'
+    || ev?.messageType === 'DrainOutbox'
+}
+
+/** Returns only owner-thread Runtime results carried by drain.queries. */
+export function runtimeDrainQueries(events) {
+  const queries = []
+  for (const record of events ?? []) {
+    const ev = record?.ev
+    if (!isRuntimeDrain(ev) || !Array.isArray(ev.queries)) continue
+    for (const query of ev.queries) {
+      if (isObject(query)) queries.push(query)
+    }
+  }
+  return queries
+}
+
+function runtimeDrainFrames(events) {
+  const frames = []
+  for (const record of events ?? []) {
+    const ev = record?.ev
+    if (!isRuntimeDrain(ev) || !Array.isArray(ev.frames)) continue
+    for (const frame of ev.frames) {
+      if (isObject(frame)) frames.push(frame)
+    }
+  }
+  return frames
+}
+
+function serverRecordsWithRuntimeFrames(serverEvents) {
+  return [...(serverEvents ?? []).map((record) => record?.ev), ...runtimeDrainFrames(serverEvents)]
+}
+
 export function censusFromServerLogs(serverEvents) {
   const byId = new Map()
-  for (const { ev } of serverEvents) {
+  for (const ev of serverRecordsWithRuntimeFrames(serverEvents)) {
+    if (!isObject(ev)) continue
     const kind = kindOf(ev)
-    if (kind !== 'entity_admitted' && kind !== 'admit') continue
-    const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
-    const type = entityTypeOf(ev)
-    if (id == null || type == null) continue
-    byId.set(id, type)
+    if (kind === 'entity_admitted' || kind === 'admit') {
+      const id = parseSenderNetEntityId(ev) ?? parseSenderNetEntityId(ev.netEntityId)
+      const type = entityTypeOf(ev)
+      if (id != null && type != null) byId.set(id, type)
+    }
+    if (ev.messageType !== 'WorldChange' || !Array.isArray(ev.creates)) continue
+    for (const create of ev.creates) {
+      const id = parseSenderNetEntityId(create) ?? parseSenderNetEntityId(create?.netEntityId)
+      const type = entityTypeOf(create)
+      if (id != null && type != null) byId.set(id, type)
+    }
   }
   let botCount = 0
   let playerCount = 0
@@ -174,21 +222,38 @@ export function censusFromServerLogs(serverEvents) {
   return { botCount, playerCount, total: byId.size, netEntityIds: [...byId.keys()] }
 }
 
+function decodeHexText(value) {
+  if (typeof value !== 'string' || value.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(value)) return null
+  const bytes = Buffer.from(value, 'hex')
+  try { return new TextDecoder().decode(bytes) } catch { return null }
+}
+
+function chatEventFromRpc(rpc) {
+  if (!isObject(rpc) || rpc.componentId !== 'ChatComponent' || rpc.method !== 'OnChatMessage') return null
+  const sender = parseSenderNetEntityId(rpc.sender)
+  if (sender == null || typeof rpc.messageId !== 'number' || typeof rpc.roomSequence !== 'number' || typeof rpc.appliedTick !== 'number') return null
+  const encoded = Array.isArray(rpc.args) ? rpc.args[0] : null
+  const text = decodeHexText(encoded) ?? (typeof rpc.text === 'string' ? rpc.text : '')
+  return { messageId: rpc.messageId, roomSequence: rpc.roomSequence, senderNetEntityId: sender, appliedTick: rpc.appliedTick, text }
+}
+
 function chatEventsFromClient(clientEvents) {
   const events = []
-  for (const { ev } of clientEvents) {
+  const records = [...(clientEvents ?? []).map((record) => record?.ev), ...runtimeDrainFrames(clientEvents)]
+  for (const ev of records) {
     const kind = kindOf(ev)
-    if (kind !== 'chat.event' && kind !== 'event') continue
-    const sender = parseSenderNetEntityId(ev)
-    if (sender == null) continue
-    if (typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
-    events.push({
-      messageId: ev.messageId,
-      roomSequence: ev.roomSequence,
-      senderNetEntityId: sender,
-      appliedTick: ev.appliedTick,
-      text: typeof ev.text === 'string' ? ev.text : '',
-    })
+    if (kind === 'chat.event' || kind === 'event') {
+      const sender = parseSenderNetEntityId(ev)
+      if (sender == null || typeof ev.messageId !== 'number' || typeof ev.roomSequence !== 'number' || typeof ev.appliedTick !== 'number') continue
+      events.push({ messageId: ev.messageId, roomSequence: ev.roomSequence, senderNetEntityId: sender, appliedTick: ev.appliedTick, text: typeof ev.text === 'string' ? ev.text : '' })
+      continue
+    }
+    if (ev.messageType === 'WorldChange' && Array.isArray(ev.rpcs)) {
+      for (const rpc of ev.rpcs) {
+        const parsed = chatEventFromRpc(rpc)
+        if (parsed) events.push(parsed)
+      }
+    }
   }
   return events
 }
@@ -216,6 +281,42 @@ function blobOf(events) {
   return events.map(({ ev }) => JSON.stringify(ev)).join('\n').toLowerCase()
 }
 
+function malformedRecordFailures(events, source) {
+  return (events ?? [])
+    .filter((record) => record?.error)
+    .map((record) => ({
+      check: 'logs:malformed',
+      message: `${source} line ${record.line}: ${record.error}`,
+    }))
+}
+
+function malformedDrainFailures(events, source) {
+  const failures = []
+  for (const record of events ?? []) {
+    const ev = record?.ev
+    if (!isRuntimeDrain(ev)) continue
+    for (const field of ['frames', 'queries']) {
+      if (ev[field] === undefined) continue
+      if (!Array.isArray(ev[field])) {
+        failures.push({
+          check: 'logs:malformed',
+          message: `${source} line ${record.line}: drain.${field} must be an array`,
+        })
+        continue
+      }
+      for (let i = 0; i < ev[field].length; i++) {
+        if (!isObject(ev[field][i])) {
+          failures.push({
+            check: 'logs:malformed',
+            message: `${source} line ${record.line}: drain.${field}[${i}] must be an object`,
+          })
+        }
+      }
+    }
+  }
+  return failures
+}
+
 export function verifyRunFromLogs(serverDir, clientDir) {
   const failures = []
   if (!serverDir || !existsSync(serverDir) || !clientDir || !existsSync(clientDir)) {
@@ -230,6 +331,10 @@ export function verifyRunFromLogs(serverDir, clientDir) {
 
   const serverEvents = loadRecords(serverDir)
   const clientEvents = loadRecords(clientDir)
+  failures.push(...malformedRecordFailures(serverEvents, 'server'))
+  failures.push(...malformedRecordFailures(clientEvents, 'client'))
+  failures.push(...malformedDrainFailures(serverEvents, 'server'))
+  failures.push(...malformedDrainFailures(clientEvents, 'client'))
   const host = findKind(serverEvents, 'host') ?? findKind(clientEvents, 'host')
   const hostName = host?.process ?? host?.host
   if (hostName === 'lumio-mvp-host' || /lumio-mvp-host/i.test(String(hostName ?? ''))) {
@@ -266,11 +371,15 @@ export function verifyRunFromLogs(serverDir, clientDir) {
     failures.push({ check: 's3:chat-event', message: 'client logs must contain received chat.event' })
   }
 
-  const queryBlob = blobOf(serverEvents) + '\n' + blobOf(clientEvents)
+  const runtimeQueries = runtimeDrainQueries(serverEvents).concat(runtimeDrainQueries(clientEvents))
+  const queryBlob = blobOf(runtimeQueries.map((ev) => ({ ev })))
   for (const needed of ['unauthorized', 'invisible', 'stale']) {
     if (!queryBlob.includes(needed)) {
       failures.push({ check: 's5:missing', message: `logs missing query outcome ${needed}` })
     }
+  }
+  if (runtimeQueries.length === 0) {
+    failures.push({ check: 's5:drain-queries', message: 'Runtime query outcomes must come from drain.queries' })
   }
 
   const tick = findKind(clientEvents, 'tick') ?? findKind(serverEvents, 'tick')
@@ -457,9 +566,15 @@ export function writeOracleMinFixture(dir, { crlf = false, harnessJunk = true } 
   const extraServer = [
     { kind: 'host', process: 'lumio-entity-chat-replay', pid: 4242 },
     { kind: 'account', wrongPasswordCode: 'wrong_password' },
-    { kind: 'query', outcome: 'unauthorized' },
-    { kind: 'query', outcome: 'invisible' },
-    { kind: 'query', outcome: 'stale' },
+    {
+      kind: 'drain',
+      frames: [],
+      queries: [
+        { type: 'AttributeQueryResult', requestId: 'query-unauthorized', outcome: 'unauthorized' },
+        { type: 'AttributeQueryResult', requestId: 'query-invisible', outcome: 'invisible' },
+        { type: 'AttributeQueryResult', requestId: 'query-stale', outcome: 'stale_generation' },
+      ],
+    },
     {
       kind: 'snapshot',
       historyCount: 0,
@@ -592,6 +707,15 @@ test('harness evidence.json / timer-trace.json 不是输入', () => {
   assert.ok(report.failures.some((f) => f.check === 'logs:missing' || f.check === 'round-1' || f.check === 'round-2'))
 })
 
+test('drain.queries are the only accepted Runtime query result source', () => {
+  const records = [
+    { ev: { kind: 'query', outcome: 'unauthorized' } },
+    { ev: { kind: 'drain', frames: [], queries: [{ type: 'AttributeQueryResult', requestId: 'q1', outcome: 'unauthorized' }] } },
+  ]
+  const queries = runtimeDrainQueries(records)
+  assert.deepEqual(queries, [{ type: 'AttributeQueryResult', requestId: 'q1', outcome: 'unauthorized' }])
+})
+
 test('fixture --dir 在 LF 与 CRLF 下均为 ok', () => {
   const root = dirname(oracleFilePath())
   const lfDir = join(root, '.tmp-oracle-min-lf')
@@ -652,4 +776,35 @@ test('101 窗口行来自客户端日志且 roomSequence 严格递增', () => {
   for (let i = 1; i < report.windowLines.length; i++) {
     assert.ok(report.windowLines[i].roomSequence > report.windowLines[i - 1].roomSequence)
   }
+})
+
+test('parseNdjson preserves malformed and non-object records for fail-closed verification', () => {
+  const records = parseNdjson('{"kind":"ok"}\n[]\nnot-json\n')
+  assert.equal(records.length, 3)
+  assert.deepEqual(records[0], { line: 1, ev: { kind: 'ok' } })
+  assert.equal(records[1].line, 2)
+  assert.equal(records[1].ev, null)
+  assert.equal(records[1].error, 'record_not_object')
+  assert.equal(records[2].line, 3)
+  assert.equal(records[2].ev, null)
+  assert.equal(records[2].error, 'malformed_json')
+})
+
+test('verifyRunFromLogs rejects malformed and non-object log records', () => {
+  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-record')
+  writeOracleMinFixture(root)
+  writeFileSync(join(root, 'round-1', 'server', 'server.ndjson'), '[]\n{"kind":"host","process":"lumio-entity-chat-replay"}\n')
+  const report = verifyRunFromLogs(join(root, 'round-1', 'server'), join(root, 'round-1', 'client'))
+  assert.equal(report.ok, false)
+  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed'))
+})
+
+test('verifyRunFromLogs rejects non-object Runtime drain records', () => {
+  const root = join(dirname(oracleFilePath()), '.tmp-oracle-malformed-drain')
+  writeOracleMinFixture(root)
+  const serverPath = join(root, 'round-1', 'server', 'server.ndjson')
+  writeFileSync(serverPath, readFileSync(serverPath, 'utf8') + '{"kind":"drain","frames":[],"queries":[null]}\n')
+  const report = verifyRunFromLogs(serverPath, join(root, 'round-1', 'client'))
+  assert.equal(report.ok, false)
+  assert.ok(report.failures.some((failure) => failure.check === 'logs:malformed' && failure.message.includes('drain.queries[0]')))
 })

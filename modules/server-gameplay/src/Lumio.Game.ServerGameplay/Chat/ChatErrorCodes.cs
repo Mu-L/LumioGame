@@ -24,7 +24,7 @@ public static class ChatErrorCodes
     /// <summary>InputCommand messageType or command-array shape is illegal.</summary>
     public const string BadEnvelope = "bad_envelope";
 
-    /// <summary>CommandBlock.mappingId is unregistered or not kind=command.</summary>
+    /// <summary>Runtime command mapping is unregistered or not a chat command.</summary>
     public const string UnknownCommandType = "unknown_command_type";
 
     /// <summary>payloadSha256 does not match the decoded payload bytes.</summary>
@@ -33,6 +33,6 @@ public static class ChatErrorCodes
     /// <summary>payload is not valid LumioBinV1 for the mapping fieldOrder.</summary>
     public const string UndecodablePayload = "undecodable_payload";
 
-    /// <summary>CommandBlock mappingId array is not strictly ascending unique.</summary>
+    /// <summary>Runtime command mapping order is invalid.</summary>
     public const string BlockOrderViolation = "block_order_violation";
 }

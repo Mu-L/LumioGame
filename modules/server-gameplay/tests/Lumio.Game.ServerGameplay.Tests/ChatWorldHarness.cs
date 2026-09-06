@@ -20,7 +20,6 @@ internal static class ChatWorldHarness
             manager.Tick();
         }
 
-        int n = 0;
         foreach (IdentityComponent identity in manager.World.Each<IdentityComponent>())
         {
             if (string.IsNullOrEmpty(identity.AccountId))
@@ -28,8 +27,7 @@ internal static class ChatWorldHarness
                 continue;
             }
 
-            manager.BindSelf("C" + (n + 1).ToString(CultureInfo.InvariantCulture), identity.Entity);
-            n++;
+            manager.Bind(identity.Entity);
         }
 
         return manager;

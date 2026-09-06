@@ -22,6 +22,7 @@ metadata:
 - **compareRuns**：`eventOrder` 四元组 `(messageId, roomSequence, senderNetEntityId, appliedTick)` 与 `appliedTicks` 逐值逐位相等。无多重集、无只比长度。
 - **sender**：32-hex 或 `senderNetEntityIdInstanceId` + `senderNetEntityIdCounter` 两段 u64。不用 `type: u128`。
 - **窗口**：101 条来自客户端日志 `chat.window`（或收到的 `chat.event`），`roomSequence` 严格递增。
+- **Runtime drain**：查询 / 过期结果必须来自 Runtime owner-thread `drain.queries`；C-1 `frames` 保持独立并按 Runtime 编码消费，oracle 不维护本地绑定、tombstone 或快照真相。
 - **目录**：收口入库 `integration/entity-chat/logs/<YYYY-MM-DD>-<arch>-<runtime>-<server>-<client>-<game>-<nativecore>/`。单测 fixture 在 `integration/entity-chat/fixtures/`，不是收口目录。
 - **S10**：按 ADR-058 §11 记 `deferred`，不伪造 pass。
 

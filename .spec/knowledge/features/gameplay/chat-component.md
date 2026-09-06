@@ -18,6 +18,7 @@ metadata:
 ## 设计
 
 - **真源**：Runtime `Components/Chat/ChatComponent*.cs`。`[ServerRpc] SendMessage` 处理体在 `.Server.cs`；Game `ChatSetMessageSystem` 只 Admit 信封到 `WorldManager.Enqueue` 或在 Owner Thread 调 `SendMessage`。
+- **查询 / 过期**：Game 通过 `WorldManager.Enqueue` 提交 Runtime owner-thread controls，并从 `Drain` 的 `queries` 集合消费结果；不建立第二份绑定、查询、tombstone 或 expiry authority。
 - **入口**：服务器玩法从 `ServerBootstrap.Boot(instanceId)` 建 World Manager（R-00385）。
 - **输入**：`ChatInput` 只有 `text`。发送者由宿主会话注入为 128 位 `NetEntityId`（instanceId + counter，32-hex），客户端不能自选。
 - **状态**：`LastMessageText` + `LastMessageTick`（契约字段 `lastMessageText` / `lastMessageTick`），服务器私有、`[Persist]`、不同步。
