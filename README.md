@@ -34,7 +34,7 @@
 
 `LumioGame` 位于依赖图最上层，把 Runtime、Server、Client 和玩法内容组合成具体游戏，产出同一 `ProductId + GameReleaseId` 下的 Gameplay、配置、内容、Scenario 与 Migration。
 
-Gameplay Schema、Replication Mapping、GAS/Config/Content/Migration Schema、ID Registry、正向/失败 Fixture 和契约校验器只由架构源 ABI/wire 契约维护。新增玩法先补 Schema、Scenario、失败路径和 Replay 断言，再生成 Server/Client 产物；本仓库不手写重复 MessageId、Serializer 或 ABI 定义。
+本仓库拥有玩法语义，不拥有 Native、Voxel 内部、网络连接、Host 进程或 Runtime 生命周期。
 
 本仓库拥有玩法语义，不拥有 Native、Voxel 内部、网络连接、Host 进程或 Runtime 生命周期。
 

@@ -37,8 +37,11 @@ public sealed class ChatComponentSetMessageTests
         Assert.Equal(
             ChatOperationKind.Admitted,
             ChatSetMessageSystem.Admit(manager, "room-01", senderA, "C1", 1UL, RuntimeChatInputFixture.Create(1UL, senderA, "gg", "C1")).Kind);
-        Assert.Equal(string.Empty, Component(manager, senderA).LastMessageText);
-        Assert.Equal(string.Empty, Component(manager, senderB).LastMessageText);
+        // Runtime 18b5feb 把 ChatComponent.LastMessageText 从 `public string = ""` 改成
+        // `Sync<string>`，而 Sync<T> 没有带初值的构造函数，所以「还没写过」现在读出 null 而非 ""。
+        // 这里断言的是意图（尚无消息），对两种表示都成立。
+        Assert.Equal(string.Empty, Component(manager, senderA).LastMessageText.Value ?? string.Empty);
+        Assert.Equal(string.Empty, Component(manager, senderB).LastMessageText.Value ?? string.Empty);
 
         manager.Tick();
 
@@ -46,7 +49,7 @@ public sealed class ChatComponentSetMessageTests
         ChatComponent other = Component(manager, senderB);
         Assert.Equal("gg", sender.LastMessageText);
         Assert.True(sender.LastMessageTick > 0UL);
-        Assert.Equal(string.Empty, other.LastMessageText);
+        Assert.Equal(string.Empty, other.LastMessageText.Value ?? string.Empty);
         Assert.Equal(0UL, other.LastMessageTick);
         ClientRpcRecord emitted = Assert.Single(DistinctByMessageId(ChatEvents(manager)));
         Assert.Equal(senderA, emitted.Sender);
@@ -120,7 +123,7 @@ public sealed class ChatComponentSetMessageTests
         Assert.Equal(ChatErrorCodes.EntityDestroyed, destroyedWrite.ErrorCode);
         Assert.False(ChatSetMessageSystem.TryGetComponent(manager, missing, out ChatComponent? resurrected));
         Assert.Null(resurrected);
-        Assert.Equal(string.Empty, Component(manager, live).LastMessageText);
+        Assert.Equal(string.Empty, Component(manager, live).LastMessageText.Value ?? string.Empty);
     }
 
     [Fact]
@@ -138,7 +141,7 @@ public sealed class ChatComponentSetMessageTests
         Assert.True(worker.Join(TimeSpan.FromSeconds(5)));
 
         Assert.Equal(ChatOperationKind.Admitted, admitted!.Value.Kind);
-        Assert.Equal(string.Empty, Component(manager, sender).LastMessageText);
+        Assert.Equal(string.Empty, Component(manager, sender).LastMessageText.Value ?? string.Empty);
 
         manager.Tick();
         Assert.Equal("gg", Component(manager, sender).LastMessageText);

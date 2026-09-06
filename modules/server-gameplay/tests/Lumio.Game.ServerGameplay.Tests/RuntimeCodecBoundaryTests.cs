@@ -74,7 +74,10 @@ public sealed class RuntimeCodecBoundaryTests
         Assert.Equal(ChatErrorCodes.BadPayloadHash, rejected.ErrorCode);
         manager.Tick();
         Assert.True(ChatSetMessageSystem.TryGetComponent(manager, sender, out ChatComponent? component));
-        Assert.Equal(string.Empty, component.LastMessageText);
+        // Runtime 18b5feb 把 ChatComponent.LastMessageText 从 `public string = ""` 改成
+        // `Sync<string>`，而 Sync<T> 没有带初值的构造函数，所以「还没写过」现在读出 null 而非 ""。
+        // 这里断言的是意图（尚无消息），对两种表示都成立。
+        Assert.Equal(string.Empty, component.LastMessageText.Value ?? string.Empty);
     }
 
     [Fact]
@@ -168,7 +171,7 @@ public sealed class RuntimeCodecBoundaryTests
     private static string ComponentText(WorldManager manager, NetEntityId sender)
     {
         Assert.True(ChatSetMessageSystem.TryGetComponent(manager, sender, out ChatComponent? component));
-        return component.LastMessageText;
+        return component.LastMessageText.Value ?? string.Empty;
     }
 
     private static byte[] ChatPayload(string text)
