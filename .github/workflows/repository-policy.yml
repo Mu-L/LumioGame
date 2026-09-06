@@ -37,3 +37,39 @@ jobs:
           grep -q '^## 当前阶段与开发节奏$' README.md
           test -s docs/architecture/.baseline.sha256
           sha256sum -c docs/architecture/.baseline.sha256
+
+  build-test:
+    name: Build and test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout LumioGame
+        uses: actions/checkout@v4
+        with:
+          path: game
+      - name: Checkout LumioGameRuntime (main)
+        uses: actions/checkout@v4
+        with:
+          repository: LumioGames/LumioGameRuntime
+          ref: main
+          path: runtime
+      - name: Set up .NET from global.json
+        uses: actions/setup-dotnet@v4
+        with:
+          global-json-file: game/global.json
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: dotnet build
+        working-directory: game
+        env:
+          LUMIO_RUNTIME_ROOT: ${{ github.workspace }}/runtime
+        run: dotnet build LumioGame.sln
+      - name: dotnet test
+        working-directory: game
+        env:
+          LUMIO_RUNTIME_ROOT: ${{ github.workspace }}/runtime
+        run: dotnet test LumioGame.sln
+      - name: entity-chat integration tests
+        working-directory: game/integration/entity-chat
+        run: node --test verify-evidence.mjs bot-credential.mjs web/chat-window.test.mjs
