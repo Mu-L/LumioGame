@@ -1,9 +1,9 @@
 # LumioGame 模块脚手架设计
 
 > **状态**：设计中
-> **架构基线**：`LGE-V1.4-2026-08-27`（唯一架构源 `LumioGameEngineArchitecture`，本仓镜像 [`../../architecture/LumioGameEngine_Architecture_v1.4.md`](../../architecture/LumioGameEngine_Architecture_v1.4.md)）
+> **公共语义来源**：架构仓 `LumioGameEngine` 的 `engine/abi/native-abi.json`、`engine/wire/*.json` 与 `.spec/knowledge/features/`；本仓不保存架构镜像。
 > **上游**：根 [`README.md`](../../../README.md)（10 子模块表）、[`repository-architecture.md`](../../../.spec/knowledge/standards/repository-architecture.md)、MVP 大纲（架构仓 `docs/plans/mvp-browser-voxel-multiplayer.md`）
-> **定位**：设计文档，不含实现代码；来源 Workflow 卡 R-00259。配套文档：[`mvp-placevoxel-content-spec.md`](mvp-placevoxel-content-spec.md)
+> **定位**：设计文档，不含实现代码；来源 Workflow 卡 R-00259。
 
 ## 1. 目标与范围
 
@@ -141,7 +141,7 @@ src/Lumio.Game.GeneratedContracts ────> Lumio.Gen.*（架构源 generate
 - 任何工程对 `LumioNativeCore` / `LumioVoxelEngine` 源码建立 Compile-Time 依赖；Voxel 只经 Runtime `IVoxelWorldPort`。
 - 引用 `LumioServer` / `LumioClient` 实现源码；只允许其**公开 Host/Adapter Contract**。
 - `ServerGameplay` ↔ `ClientGameplay` 互相引用；Unity/HybridCLR 类型出现在适配层以外。
-- 手写重复 MessageId、Serializer、ABI 定义，或手写已闭合契约的类型本体与 ADR-022 gate 判定（Architecture Gate；生成物只读；委托口径见 §6.2-1）。
+- 手写重复 MessageId、Serializer、ABI 定义，或手写公共契约的类型本体（公共语义只在架构仓维护；生成物只读）。
 - Gameplay 读取 `IsOffline`/平台/Transport 实现分叉规则；只依赖 Role、Command、Event、Port、Capability。
 
 ### 4.2 跨仓引用方式
@@ -152,7 +152,7 @@ Runtime/Server/Client 均未发包前，跨仓引用方式（ProjectReference �
 
 - 每个生产程序集配对一个 `*.Tests` 工程；测试框架对齐 GameRuntime 中央包版本（xunit.v3 + Microsoft.Testing.Platform），版本以 `Directory.Packages.props` 落地时为准。
 - 骨架阶段最低验证命令（进入各实现卡验收项）：`dotnet build`（0 warning）+ `dotnet test`（含架构约束测试：依赖方向、TFM、命名空间、testing 单向引用）。
-- 玩法级测试面（Scenario/Replay/Mapping fixture）见 [`mvp-placevoxel-content-spec.md`](mvp-placevoxel-content-spec.md) §8，不在脚手架卡内。
+- 玩法级测试面（Scenario/Replay/Mapping fixture）见 [`../bomber/stage0-test-matrix.md`](../bomber/stage0-test-matrix.md)，不在脚手架卡内。
 
 ## 6. generated 契约面：现状与显式假设
 
@@ -172,12 +172,12 @@ Runtime/Server/Client 均未发包前，跨仓引用方式（ProjectReference �
 
    - **架构韧性（原条文的保留部分）**：原「本仓设计不依赖 generated 类型 / validator 存在」写于 catalog-only 时期，一句话同时承载两层含义，现按 TD 裁决拆开——**韧性含义保留**：设计路径不建立在「generated 面必然丰富」之上，上游再次收窄或延期时本仓不阻塞；**「不使用、自行实现一份」的含义作废**，它与本条 published rule 冲突，且自造等于发明第二套定义、必然漂移。韧性是**容错**，不是**回避**。
 2. **单点引用是分层纪律，不是 TFM 兼容性的产物。** 双 TFM 落地后「`netstandard2.1` 目标无法引用 generated 包」已不成立（§6.1），本条原先据此推出的「硬理由」作废；相应地，原「需要架构源发布多 TFM 产物 → 本仓停下、卡上标 BLOCKED 上报」的条款**一并删除**——其前置条件已由 `99f94fb` 满足，不再构成停工事由。Gameplay 生产程序集不直接引用 `Lumio.Gen.*`，目录/状态表/注册表数据与 §6.2-1 要求委托使用的类型本体、gate 执行体，一律只经根 `src/Lumio.Game.GeneratedContracts` 单点适配（对齐 GameRuntime 同名工程惯例），供 mapping/scenario 校验与测试消费。**该工程是消费通道，不是再实现层**：只做引用转发与形状适配，不得在其中复制 generated 面的定义或判定逻辑——否则单点引用就成了单点重造，与 §6.2-1 冲突。保留它为唯一引用点的理由换为**依赖方向纪律**：generated artifact 是架构源的外部产物，其形态由架构所有者单方演进（ADR-048 一次就把 catalog-only 改成了含类型本体与可执行 validator），把消费收敛到一个适配工程可使此类演进的爆炸半径止于该工程，不扩散到十个 Gameplay 程序集的引用图；这与 §3.2「两端交集 API 面从第一天收窄」同向。适配工程维持单 TFM `net10.0` 是取舍而非约束（其消费方 mapping/scenario 校验与测试都在 net10.0 侧）——若日后需向 `netstandard2.1` 侧供数，本仓自行改双 TFM 即可，不再需要架构源做任何事。
-3. generated 面能力边界仍在演进：ADR-048（Status: Draft，additive within `LGE-V1.4-2026-08-27`）已交付类型本体与可执行 validator，但其覆盖面（八个已闭合契约 + ADR-022 gate）未必等于本仓所需面；边界仍以架构所有者裁决为准，裁决落地后本节按新基线更新，更新前一切按现状消费。
+3. generated 面能力边界仍在演进：架构仓已转入 Living Architecture，公共语义按 `engine/wire/<name>-v1.json` 逐条维护，其覆盖面未必等于本仓所需面；边界仍以架构所有者裁决为准，裁决落地后本节更新，更新前一切按现状消费。
 
 ### 6.3 Hash 口径（ADR-041，架构仓 `packages/canonical/canonical-digest-profile.json`）
 
 - 凡本仓产出需进 digest 的规范化 JSON（Config/Content Hash 的规范化输入等），一律遵守 **`CanonicalJsonV1`**：成员按 code point 升序、`AsciiEscaped`、拒绝重复/未知成员、**`numbers: IntegerOnly`（非整数构建期失败）**；digest 为 SHA-256，framing 取 profile 原词 `PrefixFreeOverCanonicalBytes`——域分离靠输入对象内的 `digestDomain` 成员、不加外部 framing 头（Manifest 域例外：其输入是不带 `digestDomain` 成员的 CoreEngineManifestBody 本体）。
-- ADR-041 已冻结的 digestDomain 只有五个：`Manifest / ArtifactSet / ArtifactIndex / TargetProfile / CapabilitySet`。**`snapshotId`、`mappingSetHash` 不在其覆盖范围，不得引用为 digest 口径**；Config/Content Hash 的专属 domainTag 尚未注册，处置见 [`mvp-placevoxel-content-spec.md`](mvp-placevoxel-content-spec.md) §6.3。
+- digestDomain 与 Config/Content Hash 的口径以架构仓当期公共契约为准；本仓不自拟 digest 域，也不引用 `snapshotId` / `mappingSetHash` 充当 digest 口径。
 
 ## 7. 首批实现卡拆卡蓝图（验收第 3 条）
 

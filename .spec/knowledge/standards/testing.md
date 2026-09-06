@@ -55,7 +55,7 @@ node integration/entity-chat/verify-evidence.mjs --dir integration/entity-chat/l
 
 两轮对比只读服务器日志 + 客户端日志。`compareRuns` 对 `eventOrder` 四元组与 `appliedTicks` 逐位比较（无多重集 / 只比长度）。SUCCESS 仅当 sibling `lumio-entity-chat-replay` 日志给出 101 个 32-hex NetEntityId、客户端 101 条窗口行、两轮顺序一致。`lumio-mvp-host` 与 `GameRoomHost` 不是 SUCCESS 路径。缺 replay 二进制 / Playwright / 落盘材料必须记 BLOCKED，不得合成字段，不得读 harness `evidence.json`。
 
-公共契约变更必须在架构源 `LumioGameEngineArchitecture` 通过其契约闸门（见 `AGENTS.md`「收口门槛」）；本仓只消费冻结 JSON，不另写协议。Scenario/Headless 与 formatter 命令随后续模块补进收口门槛。
+公共契约变更必须在架构仓 `LumioGameEngine` 完成（见 `AGENTS.md`「收口门槛」）；本仓只消费 `engine/wire/*.json`，不另写协议。Scenario/Headless 与 formatter 命令随后续模块补进收口门槛。
 
 ## 本仓 Headless / 契约测试面
 

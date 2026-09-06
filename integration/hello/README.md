@@ -1,6 +1,6 @@
 # MS-00002 Hello World 集成启动器
 
-MS-00002 Hello World 端到端里程碑的集成验收工具:集成启动器(launcher)、静态文件服务(static-server)与单轮证据三方对账器(verify-evidence)。契约真值是架构仓 [`engine/wire/hello-wire-v1.json`](https://github.com/LumioGames/LumioGameEngineArchitecture/blob/main/engine/wire/hello-wire-v1.json)(`lumio.hello-wire.v1`),本目录不复制协议语义,只实现执行与验收逻辑。
+MS-00002 Hello World 端到端里程碑的集成验收工具:集成启动器(launcher)、静态文件服务(static-server)与单轮证据三方对账器(verify-evidence)。契约真值是架构仓 [`engine/wire/hello-wire-v1.json`](https://github.com/LumioGames/LumioGameEngine/blob/main/engine/wire/hello-wire-v1.json)(`lumio.hello-wire.v1`),本目录不复制协议语义,只实现执行与验收逻辑。
 
 - Node ESM,除 playwright 外零运行时依赖;Node >= 24(`engines` 已固定)。
 - 真实端到端由主 loop 在全部上游构建产物就绪后执行;`npm test` 面只含 verify-evidence 的正反单测。
@@ -18,7 +18,7 @@ MS-00002 Hello World 端到端里程碑的集成验收工具:集成启动器(lau
 | 参数 | 来源 |
 |------|------|
 | `--server-exe` | LumioServer 仓构建输出 `target/<profile>/lumio-server.exe` |
-| `--native-dir` | LumioGameEngineArchitecture 仓 `.run/<BuildId>/win-x64/`(含 native dll 与 `build-info.json`,buildId/abiHash/binarySha256 从后者读取) |
+| `--native-dir` | 架构仓 `.run/<BuildId>/win-x64/`(含 native dll 与 `build-info.json`,buildId/abiHash/binarySha256 从后者读取) |
 | `--runtime-dir` | LumioGameRuntime 仓 `modules/hello/entry` 构建输出(须恰有一个 `*.runtimeconfig.json`,同名 `.dll` 为 entry 程序集) |
 | `--bot-dll` | LumioClient 仓 `modules/hello/host` 构建输出 `Lumio.Client.HelloBot.dll` |
 | `--web-dir` | LumioClient 仓 `modules/web/hello/`(须含 `index.html`;契约会在 prepare 阶段复制为 `contract.json` 放 web 根) |
@@ -32,11 +32,11 @@ MS-00002 Hello World 端到端里程碑的集成验收工具:集成启动器(lau
 ```bash
 node launcher.mjs \
   --server-exe <LumioServer>/target/release/lumio-server.exe \
-  --native-dir <LumioGameEngineArchitecture>/.run/<BuildId>/win-x64 \
+  --native-dir <LumioGameEngine>/.run/<BuildId>/win-x64 \
   --runtime-dir <LumioGameRuntime>/modules/hello/entry/bin/... \
   --bot-dll <LumioClient>/modules/hello/host/bin/.../Lumio.Client.HelloBot.dll \
   --web-dir <LumioClient>/modules/web/hello \
-  --contract <LumioGameEngineArchitecture>/engine/wire/hello-wire-v1.json \
+  --contract <LumioGameEngine>/engine/wire/hello-wire-v1.json \
   --out evidence
 ```
 
